@@ -12,6 +12,18 @@
 | メッセージ | 購読中のチャンネル一覧 (未読数つき)、メッセージの閲覧・送信 (WebSocket でリアルタイム更新) |
 | その他 | 通話中のルーム一覧、スタンプリアクションの受信表示、iPad / タブレットでは2ペイン表示 |
 
+## スクリーンショット
+
+ダミーデータで描画したものです (`tool/screenshots/` で生成)。
+
+| ログイン | チャンネル一覧 | メッセージ | 通話 | 通話 (ダーク) |
+| --- | --- | --- | --- | --- |
+| <img src="docs/screenshots/01_login.png" width="160"> | <img src="docs/screenshots/02_channels.png" width="160"> | <img src="docs/screenshots/03_messages.png" width="160"> | <img src="docs/screenshots/04_call.png" width="160"> | <img src="docs/screenshots/05_call_dark.png" width="160"> |
+
+iPad (横向き・2ペイン)
+
+<img src="docs/screenshots/06_ipad.png" width="640">
+
 ## 動かし方
 
 ```sh
@@ -102,6 +114,12 @@ flutter test
 ```
 
 GitHub Actions (`.github/workflows/ci.yml`) で analyze・test・Android の debug APK・iOS (署名なし) のビルドを行います。
+
+スクリーンショットの更新 (Noto Sans JP の Regular / Medium / Bold の `.ttf` を置いたディレクトリを指定):
+
+```sh
+QALL_SCREENSHOT_FONT_DIR=/path/to/fonts flutter test tool/screenshots
+```
 
 ## 今後やりたいこと
 

@@ -42,7 +42,7 @@ Future<void> joinCallAndOpen(
   final navigator = Navigator.of(context);
   final joining = call.join(channelId);
   // 接続処理中から通話画面を開いて状態を見せる
-  if (!_callPageOpen) unawaited(openCallPage(navigator));
+  unawaited(openCallPage(navigator));
   try {
     await joining;
   } on CallException catch (e) {
@@ -50,16 +50,12 @@ Future<void> joinCallAndOpen(
   }
 }
 
-bool _callPageOpen = false;
-
+/// 通話画面を開く。すでに開いていれば何もしない。
 Future<void> openCallPage(NavigatorState navigator) async {
-  if (_callPageOpen) return;
-  _callPageOpen = true;
-  try {
-    await navigator.push(
-      MaterialPageRoute<void>(builder: (_) => const CallPage()),
-    );
-  } finally {
-    _callPageOpen = false;
-  }
+  if (CallPage.isOpen) return;
+  // 画面の State ができる前に連打されても二重に開かないよう、先に立てておく
+  CallPage.isOpen = true;
+  await navigator.push(
+    MaterialPageRoute<void>(builder: (_) => const CallPage()),
+  );
 }

@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart';
 
-import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../widgets/user_avatar.dart';
 import '../messages/channel_page.dart';
@@ -14,6 +13,9 @@ import 'call_controller.dart';
 
 class CallPage extends ConsumerStatefulWidget {
   const CallPage({super.key});
+
+  /// 通話画面が開いているか。画面が破棄されたら (閉じる以外の理由でも) 戻る。
+  static bool isOpen = false;
 
   @override
   ConsumerState<CallPage> createState() => _CallPageState();
@@ -36,6 +38,7 @@ class _CallPageState extends ConsumerState<CallPage> {
 
   @override
   void dispose() {
+    CallPage.isOpen = false;
     _call.removeListener(_onCallChanged);
     _reactionSub?.cancel();
     super.dispose();
@@ -258,7 +261,7 @@ class _ControlButton extends StatelessWidget {
 class _ParticipantGrid extends StatelessWidget {
   const _ParticipantGrid({required this.participants});
 
-  final List<Participant> participants;
+  final List<CallParticipant> participants;
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +284,7 @@ class _ParticipantGrid extends StatelessWidget {
 class _ParticipantStrip extends StatelessWidget {
   const _ParticipantStrip({required this.participants});
 
-  final List<Participant> participants;
+  final List<CallParticipant> participants;
 
   @override
   Widget build(BuildContext context) {
@@ -305,13 +308,13 @@ class _ParticipantTile extends ConsumerWidget {
     required this.avatarRadius,
   });
 
-  final Participant participant;
+  final CallParticipant participant;
   final double avatarRadius;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userId = userIdFromIdentity(participant.identity);
-    final muted = !participant.isMicrophoneEnabled();
+    final userId = participant.userId;
+    final muted = participant.isMuted;
     final scheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -338,7 +341,7 @@ class _ParticipantTile extends ConsumerWidget {
                   ),
                 ),
               ),
-            if (participant.isScreenShareEnabled())
+            if (participant.isScreenSharing)
               Positioned(
                 left: -2,
                 bottom: -2,
@@ -422,7 +425,7 @@ class _VideoStageState extends ConsumerState<_VideoStage> {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Text(
             '${videos[page].isScreenShare ? '画面共有' : 'カメラ'}: '
-            '${userDisplayName(ref, userIdFromIdentity(videos[page].participant.identity))}'
+            '${userDisplayName(ref, videos[page].userId)}'
             '${videos.length > 1 ? '  (${page + 1}/${videos.length})' : ''}'
             '  ・タップで全画面',
             style: Theme.of(context).textTheme.bodySmall,

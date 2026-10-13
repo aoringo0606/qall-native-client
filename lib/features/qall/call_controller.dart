@@ -18,15 +18,34 @@ import 'call_background.dart';
 
 enum CallStatus { idle, connecting, connected, reconnecting }
 
+/// 通話の参加者 (画面表示用)。LiveKit の Participant から必要な情報だけ取り出したもの。
+class CallParticipant {
+  const CallParticipant({
+    required this.userId,
+    required this.isLocal,
+    this.isSpeaking = false,
+    this.isMuted = false,
+    this.isScreenSharing = false,
+  });
+
+  /// traQ のユーザーID
+  final String userId;
+  final bool isLocal;
+  final bool isSpeaking;
+  final bool isMuted;
+  final bool isScreenSharing;
+}
+
 /// 画面に表示する映像トラック (画面共有 or カメラ)。
 class CallVideo {
   const CallVideo({
-    required this.participant,
+    required this.userId,
     required this.track,
     required this.isScreenShare,
   });
 
-  final Participant participant;
+  /// 映像を送っている参加者の traQ ユーザーID
+  final String userId;
   final VideoTrack track;
   final bool isScreenShare;
 
@@ -105,7 +124,7 @@ class QallCallController extends ChangeNotifier {
 
   String? get channelId => _channelId;
   CallStatus get status => _status;
-  bool get inCall => _status != CallStatus.idle;
+  bool get inCall => status != CallStatus.idle;
   Room? get room => _room;
   Stream<StampReaction> get reactions => _reactions.stream;
 
@@ -115,26 +134,40 @@ class QallCallController extends ChangeNotifier {
   bool get isScreenSharing => _local?.isScreenShareEnabled() ?? false;
   bool get isSpeakerOn => _speakerOn;
 
-  /// 自分を先頭にした参加者一覧 (サウンドボードの再生用参加者は除く)。
-  List<Participant> get participants {
+  /// 自分を先頭にした LiveKit の参加者 (サウンドボードの再生用参加者は除く)。
+  Iterable<(String, Participant)> get _liveKitParticipants sync* {
     final room = _room;
-    if (room == null) return const [];
-    return <Participant>[
+    if (room == null) return;
+    for (final p in <Participant>[
       ?room.localParticipant,
       ...room.remoteParticipants.values,
-    ].where((p) => userIdFromIdentity(p.identity) != null).toList();
+    ]) {
+      if (userIdFromIdentity(p.identity) case final userId?) yield (userId, p);
+    }
   }
+
+  /// 自分を先頭にした参加者一覧。
+  List<CallParticipant> get participants => [
+    for (final (userId, p) in _liveKitParticipants)
+      CallParticipant(
+        userId: userId,
+        isLocal: p is LocalParticipant,
+        isSpeaking: p.isSpeaking,
+        isMuted: !p.isMicrophoneEnabled(),
+        isScreenSharing: p.isScreenShareEnabled(),
+      ),
+  ];
 
   /// 表示可能な映像。画面共有を先に並べる。
   List<CallVideo> get videos {
     final result = <CallVideo>[];
-    for (final participant in participants) {
+    for (final (userId, participant) in _liveKitParticipants) {
       for (final pub in participant.videoTrackPublications) {
         final track = pub.track;
         if (track is! VideoTrack || pub.muted) continue;
         result.add(
           CallVideo(
-            participant: participant,
+            userId: userId,
             track: track,
             isScreenShare: pub.source == TrackSource.screenShareVideo,
           ),

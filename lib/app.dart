@@ -27,6 +27,12 @@ class _AuthGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // セッション切れなどでログアウトしたら、上に積まれている画面 (チャット・通話) を閉じる
+    ref.listen(authControllerProvider, (previous, next) {
+      if (previous?.value != null && next is AsyncData && next.value == null) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    });
     final auth = ref.watch(authControllerProvider);
     return switch (auth) {
       AsyncData(value: null) => const LoginPage(),

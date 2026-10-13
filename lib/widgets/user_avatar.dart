@@ -2,9 +2,19 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/models.dart';
 import '../core/providers.dart';
 
-/// traQ のユーザーアイコン。`/public/icon/{name}` は認証不要。
+/// ユーザーアイコンの画像。`/public/icon/{name}` は認証不要。
+/// スクリーンショット撮影時などに差し替えられるようプロバイダーにしている。
+final userIconImageProvider = Provider<ImageProvider? Function(User user)>((
+  ref,
+) {
+  final api = ref.watch(apiProvider);
+  return (user) => CachedNetworkImageProvider(api.userIconUrl(user.name));
+});
+
+/// traQ のユーザーアイコン。画像が読めるまでは名前の頭文字を出す。
 class UserAvatar extends ConsumerWidget {
   const UserAvatar({
     super.key,
@@ -21,19 +31,17 @@ class UserAvatar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final api = ref.watch(apiProvider);
     final user = ref.watch(usersProvider).value?[userId];
-    final scheme = Theme.of(context).colorScheme;
+    final iconImage = ref.watch(userIconImageProvider);
 
     final avatar = CircleAvatar(
       radius: radius,
-      backgroundColor: scheme.surfaceContainerHighest,
-      foregroundImage: user == null
-          ? null
-          : CachedNetworkImageProvider(api.userIconUrl(user.name)),
+      backgroundColor: _placeholderColor(userId),
+      foregroundColor: Colors.white,
+      foregroundImage: user == null ? null : iconImage(user),
       child: Text(
         (user?.displayName ?? '?').characters.first,
-        style: TextStyle(fontSize: radius * 0.8),
+        style: TextStyle(fontSize: radius * 0.8, fontWeight: FontWeight.bold),
       ),
     );
     if (!highlight) return avatar;
@@ -46,6 +54,13 @@ class UserAvatar extends ConsumerWidget {
       child: avatar,
     );
   }
+}
+
+/// アイコン読み込み前の背景色。ユーザーごとに色を変えて見分けやすくする。
+Color _placeholderColor(String? userId) {
+  if (userId == null) return Colors.blueGrey;
+  final hue = (userId.hashCode % 360).abs().toDouble();
+  return HSLColor.fromAHSL(1, hue, 0.45, 0.55).toColor();
 }
 
 /// ユーザーIDから表示名を引く。
