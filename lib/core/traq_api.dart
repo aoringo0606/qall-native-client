@@ -255,4 +255,71 @@ class TraqApi {
         .map((r) => QallRoom.fromJson(r as Map<String, dynamic>))
         .toList();
   });
+
+  // ---- スタンプ ----
+
+  /// 全スタンプ (絵文字スタンプを含む)。
+  Future<List<Stamp>> getStamps() => _call(() async {
+    final res = await _dio.get<List<dynamic>>(
+      '/stamps',
+      queryParameters: {'include-unicode': true},
+    );
+    return res.data!
+        .map((s) => Stamp.fromJson(s as Map<String, dynamic>))
+        .toList();
+  });
+
+  /// 最近使ったスタンプのID (新しい順)。
+  Future<List<String>> getStampHistory({int limit = 50}) => _call(() async {
+    final res = await _dio.get<List<dynamic>>(
+      '/users/me/stamp-history',
+      queryParameters: {'limit': limit},
+    );
+    return [
+      for (final e in res.data!.cast<Map<String, dynamic>>())
+        e['stampId'] as String,
+    ];
+  });
+
+  // ---- サウンドボード ----
+
+  Future<List<SoundboardItem>> getSoundboard() => _call(() async {
+    final res = await _dio.get<List<dynamic>?>('/qall/soundboard');
+    return (res.data ?? const [])
+        .map((s) => SoundboardItem.fromJson(s as Map<String, dynamic>))
+        .toList();
+  });
+
+  /// サウンドボードの音を通話中のルームに流す。ルームに参加している必要がある。
+  Future<void> playSoundboard({
+    required String soundId,
+    required String roomId,
+  }) => _call(
+    () => _dio.post<void>(
+      '/qall/soundboard/play',
+      data: {'soundId': soundId, 'roomId': roomId},
+    ),
+  );
+
+  /// 短い音声ファイル (20秒程度まで) をサウンドボードに登録する。
+  Future<void> uploadSoundboard({
+    required List<int> bytes,
+    required String fileName,
+    required String name,
+    required String creatorId,
+    String? stampId,
+  }) => _call(() async {
+    MultipartFile file() => MultipartFile.fromBytes(bytes, filename: fileName);
+    // API 定義 (audio / soundName) とサーバー実装 (file / name) でフィールド名が
+    // 食い違っているため、どちらでも受け付けられるよう両方送る。
+    final form = FormData.fromMap({
+      'file': file(),
+      'audio': file(),
+      'name': name,
+      'soundName': name,
+      'creatorId': creatorId,
+      'stampId': ?stampId,
+    });
+    await _dio.post<void>('/qall/soundboard', data: form);
+  });
 }

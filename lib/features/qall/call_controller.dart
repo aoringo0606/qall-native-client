@@ -10,11 +10,15 @@ import 'package:livekit_client/livekit_client.dart';
 // ignore: implementation_imports
 import 'package:livekit_client/src/managers/broadcast_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:qall_audio/qall_audio.dart';
 
 import '../../core/models.dart';
 import '../../core/providers.dart';
+import '../../core/speech_format.dart';
 import '../../core/traq_api.dart';
+import '../settings/call_settings.dart';
 import 'call_background.dart';
+import 'call_channel_feed.dart';
 
 enum CallStatus { idle, connecting, connected, reconnecting }
 
@@ -70,10 +74,18 @@ class CallException implements Exception {
 }
 
 final qallCallProvider = Provider<QallCallController>((ref) {
+  final session = ref.watch(sessionProvider);
   final controller = QallCallController(
-    api: ref.watch(apiProvider),
+    api: session.api,
+    myUserId: session.me.id,
     channelName: (id) =>
         ref.read(channelTreeProvider).value?.displayName(id) ?? 'Qall',
+    userName: (id) => ref.read(usersProvider).value?[id]?.displayName ?? '',
+    settings: () => ref.read(callSettingsProvider),
+  );
+  ref.listen(
+    callSettingsProvider,
+    (previous, next) => controller.applySettings(previous, next),
   );
   ref.onDispose(controller.dispose);
   return controller;
@@ -86,15 +98,29 @@ final qallCallProvider = Provider<QallCallController>((ref) {
 /// - マイクのトラックを必ず publish する (Web版の参加者一覧はマイクトラックの有無で判定している)
 /// - スタンプリアクションは `{"type":"stamp","message":stampId}` の data メッセージ
 class QallCallController extends ChangeNotifier {
-  QallCallController({required this.api, required this.channelName}) {
+  QallCallController({
+    required this.api,
+    required this.channelName,
+    this.myUserId = '',
+    String Function(String userId)? userName,
+    CallSettings Function()? settings,
+  }) : userName = userName ?? ((_) => ''),
+       settings = settings ?? (() => const CallSettings()) {
     _background = CallBackgroundService(
       onNotificationAction: _onNotificationAction,
     );
   }
 
   final TraqApi api;
+  final String myUserId;
   final String Function(String channelId) channelName;
+  final String Function(String userId) userName;
+  final CallSettings Function() settings;
   late final CallBackgroundService _background;
+  CallChannelFeed? _feed;
+  StreamSubscription<Message>? _feedSubscription;
+  final _channelMessages = StreamController<Message>.broadcast();
+  bool _isWebinar = false;
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
@@ -105,18 +131,31 @@ class QallCallController extends ChangeNotifier {
   int _attempt = 0;
   final _reactions = StreamController<StampReaction>.broadcast();
 
-  static const _micOptions = AudioCaptureOptions(
-    // ミュート中もマイクのキャプチャを止めない。
-    // iOS で音声セッションを動かし続け、バックグラウンドで停止されないようにするため。
-    stopAudioCaptureOnMute: false,
-  );
+  AudioCaptureOptions get _micOptions {
+    final s = settings();
+    final standard = s.noiseReduction == NoiseReduction.standard;
+    return AudioCaptureOptions(
+      // ミュート中もマイクのキャプチャを止めない。
+      // iOS で音声セッションを動かし続け、バックグラウンドで停止されないようにするため。
+      stopAudioCaptureOnMute: false,
+      // RNNoise を使うときは WebRTC 標準のノイズ抑制と二重にかけない
+      noiseSuppression: standard,
+      voiceIsolation: standard,
+      typingNoiseDetection: standard,
+      echoCancellation: s.echoCancellation,
+      autoGainControl: s.autoGainControl,
+    );
+  }
 
-  static const _roomOptions = RoomOptions(
+  RoomOptions get _roomOptions => RoomOptions(
     adaptiveStream: true,
     dynacast: true,
     defaultAudioCaptureOptions: _micOptions,
-    defaultAudioPublishOptions: AudioPublishOptions(dtx: false),
-    defaultScreenShareCaptureOptions: ScreenShareCaptureOptions(
+    defaultAudioPublishOptions: const AudioPublishOptions(dtx: false),
+    defaultCameraCaptureOptions: const CameraCaptureOptions(
+      params: VideoParametersPresets.h720_169,
+    ),
+    defaultScreenShareCaptureOptions: const ScreenShareCaptureOptions(
       // iOS: 他のアプリの画面も共有できるよう Broadcast Upload Extension を使う
       useiOSBroadcastExtension: true,
     ),
@@ -128,11 +167,20 @@ class QallCallController extends ChangeNotifier {
   Room? get room => _room;
   Stream<StampReaction> get reactions => _reactions.stream;
 
+  /// 通話中のチャンネルに投稿されたメッセージ (弾幕用)
+  Stream<Message> get channelMessages => _channelMessages.stream;
+
+  /// ウェビナーとして開始/参加したルームか
+  bool get isWebinar => _isWebinar;
+
   LocalParticipant? get _local => _room?.localParticipant;
   bool get canPublish => _local?.permissions.canPublish ?? false;
   bool get isMicEnabled => _local?.isMicrophoneEnabled() ?? false;
   bool get isScreenSharing => _local?.isScreenShareEnabled() ?? false;
+  bool get isCameraEnabled => _local?.isCameraEnabled() ?? false;
   bool get isSpeakerOn => _speakerOn;
+  CameraPosition _cameraPosition = CameraPosition.front;
+  CameraPosition get cameraPosition => _cameraPosition;
 
   /// 自分を先頭にした LiveKit の参加者 (サウンドボードの再生用参加者は除く)。
   Iterable<(String, Participant)> get _liveKitParticipants sync* {
@@ -182,7 +230,9 @@ class QallCallController extends ChangeNotifier {
 
   // ---- 参加 / 退出 ----
 
-  Future<void> join(String channelId) async {
+  /// [webinar] が true なら、ルームがまだなければウェビナーとして作る
+  /// (後から入った人は発言権限なしで参加する)。
+  Future<void> join(String channelId, {bool webinar = false}) async {
     if (_channelId == channelId && inCall) return;
     if (inCall) await leave();
 
@@ -191,13 +241,14 @@ class QallCallController extends ChangeNotifier {
     bool cancelled() => attempt != _attempt;
 
     _channelId = channelId;
+    _isWebinar = webinar;
     _status = CallStatus.connecting;
     _notify();
 
     try {
       final micGranted = await _requestMicrophonePermission();
       final endpoint = await api.getQallEndpoint();
-      final token = await api.getQallToken(channelId);
+      final token = await api.getQallToken(channelId, isWebinar: webinar);
       if (cancelled()) return;
 
       // Android: 接続前に前面サービスを開始し、以降スリープしても切れないようにする
@@ -215,6 +266,7 @@ class QallCallController extends ChangeNotifier {
       _listener = room.createListener()..listen(_onRoomEvent);
       await room.connect(endpoint, token);
       if (cancelled()) return;
+      _isWebinar = _isWebinar || _roomIsWebinar(room.metadata);
 
       if (canPublish && micGranted) {
         await room.localParticipant?.setMicrophoneEnabled(
@@ -225,6 +277,10 @@ class QallCallController extends ChangeNotifier {
       await AudioManager.instance.setSpeakerOutputPreferred(_speakerOn);
       if (cancelled()) return;
       _status = CallStatus.connected;
+      _startFeed(channelId);
+      await _applyNoiseReduction(settings());
+      _applyVolumes();
+      _playEffect('qall_start');
       await _updateNotification();
     } catch (e) {
       if (cancelled()) return;
@@ -240,7 +296,9 @@ class QallCallController extends ChangeNotifier {
 
   Future<void> leave() async {
     if (!inCall) return;
+    final wasConnected = status != CallStatus.connecting;
     await _teardown();
+    if (wasConnected) _playEffect('qall_end');
     _notify();
   }
 
@@ -251,8 +309,11 @@ class QallCallController extends ChangeNotifier {
     _room = null;
     _listener = null;
     _channelId = null;
+    _isWebinar = false;
     _status = CallStatus.idle;
 
+    await _stopFeed();
+    unawaited(QallAudio.stopSpeaking().catchError((Object _) {}));
     if (Platform.isIOS && BroadcastManager().isBroadcasting) {
       await BroadcastManager().requestStop();
     }
@@ -264,6 +325,17 @@ class QallCallController extends ChangeNotifier {
     }
     await room?.dispose();
     await _background.stop();
+  }
+
+  /// traQ はルームのメタデータに `{"status": ..., "isWebinar": ...}` を入れている。
+  static bool _roomIsWebinar(String? metadata) {
+    if (metadata == null || metadata.isEmpty) return false;
+    try {
+      final json = jsonDecode(metadata);
+      return json is Map && json['isWebinar'] == true;
+    } on FormatException {
+      return false;
+    }
   }
 
   // ---- 操作 ----
@@ -330,7 +402,205 @@ class QallCallController extends ChangeNotifier {
 
   Future<void> toggleScreenShare() => setScreenShareEnabled(!isScreenSharing);
 
+  /// カメラ映像の送信を開始/停止する。
+  Future<void> setCameraEnabled(bool enabled) async {
+    final local = _local;
+    if (local == null) return;
+    if (!canPublish) throw const CallException('このルームでは発言権限がありません');
+    if (enabled) {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        throw const CallException('カメラの使用が許可されていません');
+      }
+      // Android 14+: バックグラウンドでもカメラを使い続けるには camera タイプのサービスが必要
+      await _background.setCamera(true);
+    }
+    try {
+      await local.setCameraEnabled(
+        enabled,
+        cameraCaptureOptions: CameraCaptureOptions(
+          cameraPosition: _cameraPosition,
+          params: VideoParametersPresets.h720_169,
+        ),
+      );
+    } catch (e) {
+      if (enabled) await _background.setCamera(false);
+      throw CallException('カメラを${enabled ? '開始' : '停止'}できませんでした: $e');
+    }
+    if (!enabled) await _background.setCamera(false);
+    _notify();
+  }
+
+  Future<void> toggleCamera() => setCameraEnabled(!isCameraEnabled);
+
+  /// 前面/背面カメラを切り替える。
+  Future<void> switchCamera() async {
+    final next = _cameraPosition == CameraPosition.front
+        ? CameraPosition.back
+        : CameraPosition.front;
+    final track = _local
+        ?.getTrackPublicationBySource(TrackSource.camera)
+        ?.track;
+    if (track is LocalVideoTrack) {
+      await track.setCameraPosition(next);
+    }
+    _cameraPosition = next;
+    _notify();
+  }
+
+  /// スタンプでリアクションする (Web版と同じ data メッセージ)。
+  Future<void> sendStamp(String stampId) async {
+    final local = _local;
+    if (local == null) return;
+    final payload = utf8.encode(
+      jsonEncode({'type': 'stamp', 'message': stampId}),
+    );
+    await local.publishData(payload, reliable: true);
+    _reactions.add(StampReaction(stampId: stampId, userId: myUserId));
+  }
+
+  /// サウンドボードの音をルームに流す (traQ サーバーが LiveKit に配信する)。
+  Future<void> playSoundboard(String soundId) async {
+    final channelId = _channelId;
+    if (channelId == null) return;
+    try {
+      await api.playSoundboard(soundId: soundId, roomId: channelId);
+    } on TraqApiException catch (e) {
+      throw CallException('再生できませんでした: ${e.message}');
+    }
+  }
+
+  /// Android: 音声の出力先の候補 (スピーカー / 受話口 / Bluetooth など)。
+  Future<List<MediaDevice>> audioOutputs() => Hardware.instance.audioOutputs();
+
+  Future<void> selectAudioOutput(MediaDevice device) async {
+    await Hardware.instance.selectAudioOutput(device);
+    _notify();
+  }
+
+  /// 設定画面での変更を通話中に反映する。
+  void applySettings(CallSettings? previous, CallSettings next) {
+    if (!inCall) return;
+    if (previous?.noiseReduction != next.noiseReduction ||
+        previous?.echoCancellation != next.echoCancellation ||
+        previous?.autoGainControl != next.autoGainControl) {
+      unawaited(_applyNoiseReduction(next));
+    }
+    if (previous?.masterVolume != next.masterVolume ||
+        previous?.userVolumes != next.userVolumes) {
+      _applyVolumes();
+    }
+    if (previous?.ttsEnabled == true && !next.ttsEnabled) {
+      unawaited(QallAudio.stopSpeaking());
+    }
+  }
+
   // ---- 内部 ----
+
+  Future<void> _applyNoiseReduction(CallSettings s) async {
+    final track = _local
+        ?.getTrackPublicationBySource(TrackSource.microphone)
+        ?.track;
+    if (track is LocalAudioTrack) {
+      try {
+        // 通話中にマイクのトラックを作り直さず切り替えられる唯一の API (LiveKit では experimental)
+        // ignore: experimental_member_use
+        await track.setAudioProcessingOptions(
+          // ignore: experimental_member_use
+          AudioProcessingOptions(
+            noiseSuppression: s.noiseReduction == NoiseReduction.standard,
+            echoCancellation: s.echoCancellation,
+            autoGainControl: s.autoGainControl,
+            highPassFilter: s.noiseReduction == NoiseReduction.standard,
+          ),
+        );
+      } catch (e) {
+        debugPrint('Failed to update audio processing: $e');
+      }
+    }
+    try {
+      final ok = await QallAudio.setNoiseSuppression(
+        s.noiseReduction == NoiseReduction.rnnoise,
+      );
+      if (!ok) debugPrint('RNNoise could not be enabled');
+    } catch (e) {
+      debugPrint('RNNoise failed: $e');
+    }
+  }
+
+  /// マスターボリュームと参加者ごとの音量を、受信している音声トラックに反映する。
+  void _applyVolumes() {
+    final room = _room;
+    if (room == null) return;
+    final s = settings();
+    for (final participant in room.remoteParticipants.values) {
+      final userId = userIdFromIdentity(participant.identity);
+      // サウンドボードなど traQ ユーザーでない参加者はマスターボリュームのみ
+      final volume = userId == null
+          ? s.masterVolume
+          : s.effectiveVolume(userId);
+      for (final pub in participant.audioTrackPublications) {
+        final track = pub.track;
+        if (track == null) continue;
+        unawaited(
+          Helper.setVolume(
+            volume,
+            track.mediaStreamTrack,
+          ).catchError((Object e) => debugPrint('Failed to set volume: $e')),
+        );
+      }
+    }
+  }
+
+  void _playEffect(String name) {
+    final s = settings();
+    if (!s.soundEffects) return;
+    // Web版と同じく、効果音はマスターボリュームの半分の大きさ
+    final volume = (s.masterVolume * 0.5).clamp(0.0, 1.0);
+    unawaited(
+      QallAudio.playSound(
+        'assets/se/$name.mp3',
+        volume: volume,
+      ).catchError((Object e) => debugPrint('Failed to play $name: $e')),
+    );
+  }
+
+  void _startFeed(String channelId) {
+    final feed = CallChannelFeed(api, channelId);
+    _feed = feed;
+    _feedSubscription = feed.messages.listen((message) {
+      if (!_channelMessages.isClosed) _channelMessages.add(message);
+      _speak(message);
+    });
+  }
+
+  Future<void> _stopFeed() async {
+    final feed = _feed;
+    _feed = null;
+    await _feedSubscription?.cancel();
+    _feedSubscription = null;
+    await feed?.dispose();
+  }
+
+  /// 通話中のチャンネルに届いたメッセージを読み上げる (自分の投稿は除く)。
+  void _speak(Message message) {
+    final s = settings();
+    if (!s.ttsEnabled || message.userId == myUserId) return;
+    final text = formatForSpeech(
+      userDisplayName: userName(message.userId),
+      content: message.content,
+      origin: api.origin,
+    );
+    unawaited(
+      QallAudio.speak(
+        text,
+        voice: s.ttsVoice,
+        pitch: s.ttsPitch,
+        rate: s.ttsRate,
+        volume: s.ttsVolume,
+      ).catchError((Object e) => debugPrint('TTS failed: $e')),
+    );
+  }
 
   Future<bool> _requestMicrophonePermission() async {
     final statuses = await [
@@ -350,7 +620,12 @@ class QallCallController extends ChangeNotifier {
         _status = CallStatus.connected;
       case RoomDisconnectedEvent():
         // 自分で leave() した場合は _listener が先に破棄されるのでここには来ない
-        unawaited(_teardown().whenComplete(_notify));
+        unawaited(
+          _teardown().whenComplete(() {
+            _playEffect('qall_end');
+            _notify();
+          }),
+        );
         return;
       case DataReceivedEvent():
         _handleData(event);
@@ -359,6 +634,16 @@ class QallCallController extends ChangeNotifier {
         // iOS のコントロールセンター等から共有を止めた場合
         unawaited(_background.setScreenSharing(false));
         unawaited(_updateNotification());
+      case TrackSubscribedEvent(:final track) when track is AudioTrack:
+        _applyVolumes();
+      case ParticipantConnectedEvent(:final participant)
+          when userIdFromIdentity(participant.identity) != null:
+        _playEffect('qall_joined');
+      case ParticipantDisconnectedEvent(:final participant)
+          when userIdFromIdentity(participant.identity) != null:
+        _playEffect('qall_left');
+      case RoomMetadataChangedEvent(:final metadata):
+        _isWebinar = _isWebinar || _roomIsWebinar(metadata);
       default:
         break;
     }
@@ -409,6 +694,7 @@ class QallCallController extends ChangeNotifier {
     _disposed = true;
     unawaited(_teardown());
     _reactions.close();
+    _channelMessages.close();
     super.dispose();
   }
 }

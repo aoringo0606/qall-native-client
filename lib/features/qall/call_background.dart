@@ -27,6 +27,7 @@ class CallBackgroundService {
   bool _useMicrophone = true;
   bool _muted = false;
   bool _screenSharing = false;
+  bool _camera = false;
 
   static bool get _supported => !kIsWeb && Platform.isAndroid;
 
@@ -66,6 +67,7 @@ class CallBackgroundService {
     _useMicrophone = useMicrophone;
     _muted = !useMicrophone;
     _screenSharing = false;
+    _camera = false;
     FlutterForegroundTask.addTaskDataCallback(_onTaskData);
     await FlutterForegroundTask.requestNotificationPermission();
     await _startService();
@@ -79,6 +81,18 @@ class CallBackgroundService {
   Future<void> setScreenSharing(bool sharing) async {
     if (!_supported || sharing == _screenSharing) return;
     _screenSharing = sharing;
+    await _restart();
+  }
+
+  /// カメラの使用開始/終了に合わせてサービスタイプを切り替える。
+  /// Android 14 以降、バックグラウンドでカメラを使い続けるには `camera` タイプが必要。
+  Future<void> setCamera(bool camera) async {
+    if (!_supported || camera == _camera) return;
+    _camera = camera;
+    await _restart();
+  }
+
+  Future<void> _restart() async {
     if (!_running) return;
     await FlutterForegroundTask.stopService();
     _running = false;
@@ -105,6 +119,7 @@ class CallBackgroundService {
     if (!_supported) return;
     FlutterForegroundTask.removeTaskDataCallback(_onTaskData);
     _screenSharing = false;
+    _camera = false;
     if (_running || await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.stopService();
     }
@@ -119,6 +134,7 @@ class CallBackgroundService {
             ? ForegroundServiceTypes.microphone
             : ForegroundServiceTypes.mediaPlayback,
         if (_screenSharing) ForegroundServiceTypes.mediaProjection,
+        if (_camera) ForegroundServiceTypes.camera,
       ],
       notificationTitle: _title,
       notificationText: _text(screenSharing: _screenSharing),

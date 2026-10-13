@@ -64,12 +64,21 @@ class _CallButton extends ConsumerWidget {
 
   final String channelId;
 
-  Future<void> _start(BuildContext context, WidgetRef ref) async {
+  Future<void> _start(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool webinar,
+  }) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('通話を開始しますか？'),
-        content: const Text('このチャンネルで Qall を開始します。'),
+        title: Text(webinar ? 'ウェビナーを開始しますか？' : '通話を開始しますか？'),
+        content: Text(
+          webinar
+              ? 'このチャンネルでウェビナーモードの Qall を開始します。'
+                    '後から参加した人は発言権限なし (視聴のみ) で参加します。'
+              : 'このチャンネルで Qall を開始します。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -83,7 +92,7 @@ class _CallButton extends ConsumerWidget {
       ),
     );
     if (ok == true && context.mounted) {
-      await joinCallAndOpen(context, ref, channelId);
+      await joinCallAndOpen(context, ref, channelId, webinar: webinar);
     }
   }
 
@@ -111,10 +120,14 @@ class _CallButton extends ConsumerWidget {
             ),
           );
         }
-        return IconButton(
+        return PopupMenuButton<bool>(
           tooltip: '通話を開始',
           icon: const Icon(Icons.add_call),
-          onPressed: () => _start(context, ref),
+          onSelected: (webinar) => _start(context, ref, webinar: webinar),
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: false, child: Text('Qall を開始')),
+            PopupMenuItem(value: true, child: Text('ウェビナーモードで Qall を開始')),
+          ],
         );
       },
     );

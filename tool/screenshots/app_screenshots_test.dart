@@ -5,6 +5,7 @@
 //   QALL_SCREENSHOT_FONT_DIR=/path/to/fonts flutter test tool/screenshots
 //
 // 画像は docs/screenshots/ に実機と同じ解像度 (スマホ 3倍 / iPad 2倍) で出力される。
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -20,7 +21,10 @@ import 'package:qall/core/session_store.dart';
 import 'package:qall/core/traq_api.dart';
 import 'package:qall/core/traq_ws.dart';
 import 'package:qall/features/qall/call_controller.dart';
+import 'package:qall/features/settings/call_settings.dart';
+import 'package:qall/widgets/stamp_image.dart';
 import 'package:qall/widgets/user_avatar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ---- ダミーデータ ----
 
@@ -203,6 +207,12 @@ class _NoSession extends SessionStore {
 class _FakeCall extends QallCallController {
   _FakeCall(TraqApi api) : super(api: api, channelName: (_) => '');
 
+  /// 弾幕に流すメッセージを外から入れる
+  final comments = StreamController<Message>.broadcast();
+
+  @override
+  Stream<Message> get channelMessages => comments.stream;
+
   @override
   String? get channelId => _callChannel;
 
@@ -259,6 +269,8 @@ Future<void> _loadFonts(String jpFontDir) async {
 
 final _boundary = GlobalKey();
 
+_FakeCall? _currentCall;
+
 Future<void> _pumpApp(
   WidgetTester tester, {
   required Size size,
@@ -285,6 +297,10 @@ Future<void> _pumpApp(
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
 
   final api = _FakeApi();
+  // tool/ 以下はアナライザーにテストと見なされないが、flutter test で実行するテスト
+  // ignore: invalid_use_of_visible_for_testing_member
+  SharedPreferences.setMockInitialValues({});
+  final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
     RepaintBoundary(
       key: _boundary,
@@ -295,8 +311,13 @@ Future<void> _pumpApp(
           else
             sessionStoreProvider.overrideWithValue(_NoSession()),
           traqWsProvider.overrideWith((ref) => _FakeWebSocket(api)),
-          if (inCall) qallCallProvider.overrideWith((ref) => _FakeCall(api)),
+          if (inCall)
+            qallCallProvider.overrideWith(
+              (ref) => _currentCall = _FakeCall(api),
+            ),
           userIconImageProvider.overrideWithValue((_) => null),
+          stampImageProvider.overrideWithValue((_) => null),
+          sharedPreferencesProvider.overrideWithValue(prefs),
         ],
         child: const QallApp(),
       ),
@@ -371,6 +392,43 @@ void main() {
         await tester.tap(find.text('通話中 (4人)'));
         await _settle(tester);
         await _capture(tester, '05_call_dark');
+      });
+
+      testWidgets('call with danmaku', (tester) async {
+        await _pumpApp(tester, size: _phone);
+        await tester.tap(find.text('通話中 (4人)'));
+        await _settle(tester);
+        final call = _currentCall!;
+        for (final (i, (user, text)) in [
+          ('u-ryo', 'いま画面共有見えてます！'),
+          ('u-hana', 'スリープしても切れないのすごい'),
+          ('u-mio', '音質いい感じ'),
+        ].indexed) {
+          call.comments.add(
+            Message(
+              id: 'd$i',
+              userId: user,
+              channelId: _callChannel,
+              content: text,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 900));
+        }
+        await tester.pump(const Duration(milliseconds: 600));
+        await _capture(tester, '07_call_danmaku');
+        // 流し終えてタイマーを消化する
+        await tester.pump(const Duration(seconds: 8));
+      });
+
+      testWidgets('settings', (tester) async {
+        await _pumpApp(tester, size: _phone, inCall: false);
+        await tester.tap(find.byTooltip('アカウント'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('通話の設定'));
+        await tester.pumpAndSettle();
+        await _capture(tester, '08_settings');
       });
 
       testWidgets('iPad two-pane', (tester) async {

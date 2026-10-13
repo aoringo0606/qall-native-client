@@ -7,6 +7,7 @@ import '../channels/channel_list.dart';
 import '../messages/channel_page.dart';
 import '../qall/call_bar.dart';
 import '../qall/call_controller.dart';
+import '../settings/settings_page.dart';
 
 /// ログイン後のトップ画面。
 ///
@@ -91,12 +92,26 @@ class _HomePageState extends ConsumerState<HomePage>
     final appBar = AppBar(
       title: const Text('Qall'),
       actions: [
-        PopupMenuButton<void>(
+        PopupMenuButton<_MenuAction>(
           tooltip: 'アカウント',
           icon: UserAvatar(userId: me.id, radius: 14),
+          // onTap で画面を開くとメニューを閉じる処理に巻き込まれるので onSelected で開く
+          onSelected: (action) => switch (action) {
+            _MenuAction.settings => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
+            ),
+            _MenuAction.logout => _confirmLogout(),
+          },
           itemBuilder: (context) => [
             PopupMenuItem(enabled: false, child: Text('@${me.name}')),
-            PopupMenuItem(onTap: _confirmLogout, child: const Text('ログアウト')),
+            const PopupMenuItem(
+              value: _MenuAction.settings,
+              child: Text('通話の設定'),
+            ),
+            const PopupMenuItem(
+              value: _MenuAction.logout,
+              child: Text('ログアウト'),
+            ),
           ],
         ),
       ],
@@ -134,3 +149,5 @@ class _HomePageState extends ConsumerState<HomePage>
     );
   }
 }
+
+enum _MenuAction { settings, logout }

@@ -1,6 +1,5 @@
-import 'dart:async';
+import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +8,13 @@ import 'package:livekit_client/livekit_client.dart';
 import '../../core/providers.dart';
 import '../../widgets/user_avatar.dart';
 import '../messages/channel_page.dart';
+import '../settings/call_settings.dart';
+import '../settings/settings_page.dart';
 import 'call_controller.dart';
+import 'danmaku.dart';
+import 'participant_volume_sheet.dart';
+import 'soundboard_sheet.dart';
+import 'stamp_picker.dart';
 
 class CallPage extends ConsumerStatefulWidget {
   const CallPage({super.key});
@@ -23,8 +28,6 @@ class CallPage extends ConsumerStatefulWidget {
 
 class _CallPageState extends ConsumerState<CallPage> {
   late final QallCallController _call;
-  StreamSubscription<StampReaction>? _reactionSub;
-  final _reactions = <(Key, StampReaction)>[];
   bool _wasInCall = false;
 
   @override
@@ -33,14 +36,12 @@ class _CallPageState extends ConsumerState<CallPage> {
     _call = ref.read(qallCallProvider);
     _wasInCall = _call.inCall;
     _call.addListener(_onCallChanged);
-    _reactionSub = _call.reactions.listen(_showReaction);
   }
 
   @override
   void dispose() {
     CallPage.isOpen = false;
     _call.removeListener(_onCallChanged);
-    _reactionSub?.cancel();
     super.dispose();
   }
 
@@ -60,14 +61,6 @@ class _CallPageState extends ConsumerState<CallPage> {
     _wasInCall = _call.inCall;
   }
 
-  void _showReaction(StampReaction reaction) {
-    final key = UniqueKey();
-    setState(() => _reactions.add((key, reaction)));
-    Future<void>.delayed(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _reactions.removeWhere((r) => r.$1 == key));
-    });
-  }
-
   Future<void> _run(Future<void> Function() action) async {
     try {
       await action();
@@ -82,12 +75,15 @@ class _CallPageState extends ConsumerState<CallPage> {
   @override
   Widget build(BuildContext context) {
     final tree = ref.watch(channelTreeProvider).value;
+    final danmaku = ref.watch(callSettingsProvider.select((s) => s.danmaku));
     return ListenableBuilder(
       listenable: _call,
       builder: (context, _) {
         final channelId = _call.channelId;
         final videos = _call.videos;
         final participants = _call.participants;
+        final listenOnly =
+            _call.status == CallStatus.connected && !_call.canPublish;
         return Scaffold(
           appBar: AppBar(
             title: Column(
@@ -103,11 +99,20 @@ class _CallPageState extends ConsumerState<CallPage> {
                   CallStatus.idle => '通話していません',
                   CallStatus.connecting => '接続中…',
                   CallStatus.reconnecting => '再接続中…',
-                  CallStatus.connected => '${participants.length}人が参加中',
+                  CallStatus.connected =>
+                    '${_call.isWebinar ? 'ウェビナー・' : ''}'
+                        '${participants.length}人が参加中',
                 }, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
             actions: [
+              IconButton(
+                tooltip: danmaku ? 'コメントを流さない' : 'コメントを流す',
+                icon: Icon(danmaku ? Icons.subtitles : Icons.subtitles_off),
+                onPressed: () => ref
+                    .read(callSettingsProvider.notifier)
+                    .update((s) => s.copyWith(danmaku: !danmaku)),
+              ),
               if (channelId != null)
                 IconButton(
                   tooltip: 'チャット',
@@ -118,32 +123,49 @@ class _CallPageState extends ConsumerState<CallPage> {
                     ),
                   ),
                 ),
+              IconButton(
+                tooltip: '通話の設定',
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
+                ),
+              ),
             ],
           ),
           body: SafeArea(
-            child: Stack(
+            child: Column(
               children: [
-                Column(
-                  children: [
-                    Expanded(
-                      child: switch (_call.status) {
-                        CallStatus.idle || CallStatus.connecting
-                            when participants.isEmpty =>
-                          const Center(child: CircularProgressIndicator()),
-                        _ when videos.isNotEmpty => _VideoStage(videos: videos),
-                        _ => _ParticipantGrid(participants: participants),
-                      },
-                    ),
-                    if (videos.isNotEmpty)
-                      SizedBox(
-                        height: 88,
-                        child: _ParticipantStrip(participants: participants),
+                if (listenOnly)
+                  MaterialBanner(
+                    content: const Text('ウェビナーのため発言権限がありません (視聴のみ)'),
+                    leading: const Icon(Icons.headphones),
+                    actions: const [SizedBox.shrink()],
+                  ),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: switch (_call.status) {
+                          CallStatus.idle || CallStatus.connecting
+                              when participants.isEmpty =>
+                            const Center(child: CircularProgressIndicator()),
+                          _ when videos.isNotEmpty => _VideoStage(
+                            videos: videos,
+                          ),
+                          _ => _ParticipantGrid(participants: participants),
+                        },
                       ),
-                    _Controls(call: _call, run: _run),
-                  ],
+                      if (danmaku)
+                        Positioned.fill(child: DanmakuOverlay(call: _call)),
+                    ],
+                  ),
                 ),
-                for (final (key, reaction) in _reactions)
-                  _FloatingStamp(key: key, reaction: reaction),
+                if (videos.isNotEmpty)
+                  SizedBox(
+                    height: 88,
+                    child: _ParticipantStrip(participants: participants),
+                  ),
+                _Controls(call: _call, run: _run),
               ],
             ),
           ),
@@ -165,43 +187,155 @@ class _Controls extends StatelessWidget {
     final connected = call.status == CallStatus.connected;
     final canPublish = connected && call.canPublish;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 16,
-        runSpacing: 12,
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _ControlButton(
-            icon: call.isMicEnabled ? Icons.mic : Icons.mic_off,
-            label: call.isMicEnabled ? 'ミュート' : 'ミュート解除',
-            active: call.isMicEnabled,
-            onPressed: canPublish ? () => run(call.toggleMicrophone) : null,
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 4,
+            children: [
+              _SmallButton(
+                icon: Icons.add_reaction_outlined,
+                tooltip: 'スタンプでリアクション',
+                onPressed: connected
+                    ? () => showStampPicker(
+                        context,
+                        title: 'リアクション',
+                        keepOpen: true,
+                        onSelected: (id) => run(() => call.sendStamp(id)),
+                      )
+                    : null,
+              ),
+              _SmallButton(
+                icon: Icons.graphic_eq,
+                tooltip: 'サウンドボード',
+                onPressed: connected ? () => showSoundboard(context) : null,
+              ),
+              _SmallButton(
+                icon: call.isSpeakerOn ? Icons.volume_up : Icons.hearing,
+                tooltip: call.isSpeakerOn
+                    ? 'スピーカー (タップで受話口)'
+                    : '受話口 (タップでスピーカー)',
+                onPressed: connected
+                    ? () => run(() => call.setSpeakerOn(!call.isSpeakerOn))
+                    : null,
+              ),
+              if (Platform.isAndroid)
+                _SmallButton(
+                  icon: Icons.speaker_group_outlined,
+                  tooltip: '音声の出力先',
+                  onPressed: connected
+                      ? () => _showOutputPicker(context, call)
+                      : null,
+                ),
+              if (call.isCameraEnabled)
+                _SmallButton(
+                  icon: Icons.cameraswitch_outlined,
+                  tooltip: 'カメラを切り替え',
+                  onPressed: () => run(call.switchCamera),
+                ),
+            ],
           ),
-          _ControlButton(
-            icon: call.isSpeakerOn ? Icons.volume_up : Icons.hearing,
-            label: call.isSpeakerOn ? 'スピーカー' : '受話口',
-            active: call.isSpeakerOn,
-            onPressed: connected
-                ? () => run(() => call.setSpeakerOn(!call.isSpeakerOn))
-                : null,
-          ),
-          _ControlButton(
-            icon: call.isScreenSharing
-                ? Icons.stop_screen_share
-                : Icons.screen_share,
-            label: call.isScreenSharing ? '共有を停止' : '画面共有',
-            active: call.isScreenSharing,
-            onPressed: canPublish ? () => run(call.toggleScreenShare) : null,
-          ),
-          _ControlButton(
-            icon: Icons.call_end,
-            label: '退出',
-            color: scheme.error,
-            foreground: scheme.onError,
-            onPressed: () => run(call.leave),
+          const SizedBox(height: 8),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _ControlButton(
+                icon: call.isMicEnabled ? Icons.mic : Icons.mic_off,
+                label: call.isMicEnabled ? 'ミュート' : 'ミュート解除',
+                active: call.isMicEnabled,
+                onPressed: canPublish ? () => run(call.toggleMicrophone) : null,
+              ),
+              _ControlButton(
+                icon: call.isCameraEnabled
+                    ? Icons.videocam
+                    : Icons.videocam_off_outlined,
+                label: call.isCameraEnabled ? 'カメラ停止' : 'カメラ',
+                active: call.isCameraEnabled,
+                onPressed: canPublish ? () => run(call.toggleCamera) : null,
+              ),
+              _ControlButton(
+                icon: call.isScreenSharing
+                    ? Icons.stop_screen_share
+                    : Icons.screen_share,
+                label: call.isScreenSharing ? '共有を停止' : '画面共有',
+                active: call.isScreenSharing,
+                onPressed: canPublish
+                    ? () => run(call.toggleScreenShare)
+                    : null,
+              ),
+              _ControlButton(
+                icon: Icons.call_end,
+                label: '退出',
+                color: scheme.error,
+                foreground: scheme.onError,
+                onPressed: () => run(call.leave),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showOutputPicker(
+    BuildContext context,
+    QallCallController call,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: FutureBuilder<List<MediaDevice>>(
+        future: call.audioOutputs(),
+        builder: (context, snapshot) {
+          final devices = snapshot.data;
+          if (devices == null) {
+            return const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(title: Text('音声の出力先')),
+              for (final d in devices)
+                ListTile(
+                  leading: const Icon(Icons.speaker),
+                  title: Text(d.label.isEmpty ? d.deviceId : d.label),
+                  onTap: () {
+                    run(() => call.selectAudioOutput(d));
+                    Navigator.of(context).pop();
+                  },
+                ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+}
+
+class _SmallButton extends StatelessWidget {
+  const _SmallButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton.filledTonal(
+      tooltip: tooltip,
+      icon: Icon(icon),
+      onPressed: onPressed,
     );
   }
 }
@@ -316,6 +450,22 @@ class _ParticipantTile extends ConsumerWidget {
     final userId = participant.userId;
     final muted = participant.isMuted;
     final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      // 他の参加者をタップすると、その人の音量を調整できる
+      onTap: participant.isLocal
+          ? null
+          : () => showParticipantVolume(context, userId),
+      child: _tileBody(context, ref, userId, muted, scheme),
+    );
+  }
+
+  Widget _tileBody(
+    BuildContext context,
+    WidgetRef ref,
+    String userId,
+    bool muted,
+    ColorScheme scheme,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -482,38 +632,6 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// 他の参加者が送ったスタンプを数秒間浮かべる。
-class _FloatingStamp extends ConsumerWidget {
-  const _FloatingStamp({super.key, required this.reaction});
-
-  final StampReaction reaction;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final api = ref.watch(apiProvider);
-    final left = (reaction.stampId.hashCode % 60 + 20) / 100;
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: 1),
-          duration: const Duration(seconds: 3),
-          builder: (context, t, child) => Align(
-            alignment: Alignment(left * 2 - 1, 0.6 - t * 1.2),
-            child: Opacity(opacity: t < 0.8 ? 1 : (1 - t) * 5, child: child),
-          ),
-          child: CachedNetworkImage(
-            imageUrl: api.stampImageUrl(reaction.stampId),
-            httpHeaders: api.authHeaders,
-            width: 48,
-            height: 48,
-            errorWidget: (_, _, _) => const SizedBox.shrink(),
-          ),
-        ),
       ),
     );
   }

@@ -1,0 +1,6 @@
+This plugin is part of qall-native-client.
+
+It bundles RNNoise (ios/qall_audio/Sources/qall_denoiser/rnnoise), which is
+distributed under the BSD 3-Clause license. See
+ios/qall_audio/Sources/qall_denoiser/rnnoise/COPYING for its copyright notice
+and license terms.

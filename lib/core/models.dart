@@ -196,3 +196,47 @@ class QallRoom {
   List<String> get userIds =>
       {for (final p in participants) ?p.userId}.toList();
 }
+
+class Stamp {
+  const Stamp({required this.id, required this.name, this.isUnicode = false});
+
+  factory Stamp.fromJson(Map<String, dynamic> json) => Stamp(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    isUnicode: json['isUnicode'] as bool? ?? false,
+  );
+
+  final String id;
+  final String name;
+
+  /// 絵文字 (Unicode) 由来のスタンプか
+  final bool isUnicode;
+}
+
+/// Qall のサウンドボードに登録された音声。
+class SoundboardItem {
+  const SoundboardItem({
+    required this.soundId,
+    required this.soundName,
+    this.stampId,
+    this.creatorId,
+  });
+
+  factory SoundboardItem.fromJson(Map<String, dynamic> json) {
+    String? uuid(Object? v) =>
+        v is String && v.isNotEmpty && v != _nilUuid ? v : null;
+    return SoundboardItem(
+      soundId: json['soundId'] as String,
+      soundName: json['soundName'] as String? ?? '',
+      stampId: uuid(json['stampId']),
+      creatorId: uuid(json['creatorId']),
+    );
+  }
+
+  static const _nilUuid = '00000000-0000-0000-0000-000000000000';
+
+  final String soundId;
+  final String soundName;
+  final String? stampId;
+  final String? creatorId;
+}

@@ -8,11 +8,13 @@ import 'call_controller.dart';
 import 'call_page.dart';
 
 /// 通話に参加して通話画面を開く。別のチャンネルで通話中なら確認する。
+/// [webinar] が true ならウェビナーモードで開始する。
 Future<void> joinCallAndOpen(
   BuildContext context,
   WidgetRef ref,
-  String channelId,
-) async {
+  String channelId, {
+  bool webinar = false,
+}) async {
   final call = ref.read(qallCallProvider);
   if (call.inCall && call.channelId != channelId) {
     final tree = ref.read(channelTreeProvider).value;
@@ -40,7 +42,7 @@ Future<void> joinCallAndOpen(
   if (!context.mounted) return;
   final messenger = ScaffoldMessenger.of(context);
   final navigator = Navigator.of(context);
-  final joining = call.join(channelId);
+  final joining = call.join(channelId, webinar: webinar);
   // 接続処理中から通話画面を開いて状態を見せる
   unawaited(openCallPage(navigator));
   try {
