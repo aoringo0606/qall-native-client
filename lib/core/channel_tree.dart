@@ -30,6 +30,49 @@ class ChannelTree {
     return _pathCache[id] = names.reversed.join('/');
   }
 
+  /// パスで絞り込んだチャンネル (アーカイブ済みを除く)。
+  ///
+  /// [query] は空白区切りで、すべての語をパスに含むものを返す (大文字小文字は区別しない、
+  /// 先頭の `#` は無視)。チャンネル名が語に一致・前方一致するものほど前に並べる。
+  List<Channel> search(String query, {int limit = 100}) {
+    final words = query
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .map((w) => w.startsWith('#') ? w.substring(1) : w)
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return const [];
+
+    final hits = <({Channel channel, String path, int rank})>[];
+    for (final channel in _byId.values) {
+      if (channel.archived) continue;
+      final p = path(channel.id)!;
+      final lower = p.toLowerCase();
+      if (!words.every(lower.contains)) continue;
+      final name = channel.name.toLowerCase();
+      final last = words.last;
+      final rank = name == last
+          ? 0
+          : name.startsWith(last)
+          ? 1
+          : lower.startsWith(words.first)
+          ? 2
+          : 3;
+      hits.add((channel: channel, path: p, rank: rank));
+    }
+    hits.sort((a, b) {
+      final byRank = a.rank.compareTo(b.rank);
+      if (byRank != 0) return byRank;
+      final byDepth = '/'
+          .allMatches(a.path)
+          .length
+          .compareTo('/'.allMatches(b.path).length);
+      if (byDepth != 0) return byDepth;
+      return a.path.compareTo(b.path);
+    });
+    return [for (final h in hits.take(limit)) h.channel];
+  }
+
   /// `#` 付きの表示名。見つからなければIDの先頭を表示する。
   String displayName(String id) {
     final p = path(id);

@@ -13,7 +13,7 @@ enum MicrophoneMode { standard, voiceIsolation, wideSpectrum, unknown }
 
 /// Qall の通話音声まわりのネイティブ機能。
 abstract final class QallAudio {
-  static const _channel = MethodChannel('jp.trap.qall/audio');
+  static const _channel = MethodChannel('io.github.kaitoyama.qall/audio');
 
   /// マイク音声に RNNoise (AI ノイズ除去) をかけるかどうかを切り替える。
   ///

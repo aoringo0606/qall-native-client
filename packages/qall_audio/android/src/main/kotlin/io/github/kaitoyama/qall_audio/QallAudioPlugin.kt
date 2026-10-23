@@ -1,4 +1,4 @@
-package jp.trap.qall_audio
+package io.github.kaitoyama.qall_audio
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
@@ -15,7 +15,7 @@ class QallAudioPlugin :
     private val captureHook = WebRtcCaptureHook()
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        channel = MethodChannel(binding.binaryMessenger, "jp.trap.qall/audio")
+        channel = MethodChannel(binding.binaryMessenger, "io.github.kaitoyama.qall/audio")
         channel.setMethodCallHandler(this)
         speechAndSounds = SpeechAndSounds(binding.applicationContext) {
             binding.flutterAssets.getAssetFilePathByName(it)

@@ -1,15 +1,6 @@
-import 'dart:io' show Cookie;
-
 import 'package:dio/dio.dart';
 
 import 'models.dart';
-
-/// traQ のセッションCookie名。
-///
-/// Qall 系 API (`/qall/*`) は `WebRTC` 権限を要求するが、OAuth2 の
-/// read/write スコープにはこの権限が含まれない。そのためこのアプリは
-/// Web版と同じくセッションCookieで認証する。
-const sessionCookieName = 'r_session';
 
 class TraqApiException implements Exception {
   const TraqApiException(this.message, {this.statusCode});
@@ -23,12 +14,11 @@ class TraqApiException implements Exception {
   String toString() => message;
 }
 
-/// traQ API v3 のクライアント。
+/// traQ API v3 のクライアント。OAuth2 のアクセストークンで認証する。
 class TraqApi {
   TraqApi({
     required this.origin,
-    this._sessionToken,
-    this.onSessionTokenChanged,
+    required this.accessToken,
     this.onUnauthorized,
   }) : _dio = Dio(
          BaseOptions(
@@ -44,18 +34,8 @@ class TraqApi {
           options.headers.addAll(authHeaders);
           handler.next(options);
         },
-        onResponse: (response, handler) {
-          _captureSessionCookie(response.headers);
-          handler.next(response);
-        },
         onError: (error, handler) {
-          final response = error.response;
-          if (response != null) {
-            _captureSessionCookie(response.headers);
-            if (response.statusCode == 401 && _sessionToken != null) {
-              onUnauthorized?.call();
-            }
-          }
+          if (error.response?.statusCode == 401) onUnauthorized?.call();
           handler.next(error);
         },
       ),
@@ -65,19 +45,14 @@ class TraqApi {
   /// 例: `https://q.trap.jp`
   final String origin;
   final Dio _dio;
-  String? _sessionToken;
+  final String accessToken;
 
-  /// サーバーがセッションを再発行したときに呼ばれる (永続化用)。
-  final void Function(String token)? onSessionTokenChanged;
-
-  /// ログイン済みのはずのリクエストが 401 になったときに呼ばれる。
+  /// リクエストが 401 になった (トークンが失効した) ときに呼ばれる。
   void Function()? onUnauthorized;
-
-  String? get sessionToken => _sessionToken;
 
   /// WebSocket や画像取得など Dio 以外の通信にも付ける認証ヘッダー。
   Map<String, String> get authHeaders => {
-    if (_sessionToken case final token?) 'Cookie': '$sessionCookieName=$token',
+    'Authorization': 'Bearer $accessToken',
   };
 
   Uri get webSocketUri {
@@ -98,21 +73,6 @@ class TraqApi {
 
   String stampImageUrl(String stampId) =>
       '$origin/api/v3/stamps/$stampId/image';
-
-  void _captureSessionCookie(Headers headers) {
-    for (final value in headers['set-cookie'] ?? const <String>[]) {
-      final Cookie cookie;
-      try {
-        cookie = Cookie.fromSetCookieValue(value);
-      } on FormatException {
-        continue;
-      }
-      if (cookie.name != sessionCookieName || cookie.value.isEmpty) continue;
-      if (cookie.value == _sessionToken) continue;
-      _sessionToken = cookie.value;
-      onSessionTokenChanged?.call(cookie.value);
-    }
-  }
 
   Future<T> _call<T>(Future<T> Function() request) async {
     try {
@@ -137,19 +97,14 @@ class TraqApi {
 
   // ---- 認証 ----
 
-  /// ユーザー名とパスワードでログインし、セッションCookieを取得する。
-  Future<void> login({required String name, required String password}) =>
-      _call(() async {
-        await _dio.post<void>(
-          '/login',
-          data: {'name': name, 'password': password},
-        );
-        if (_sessionToken == null) {
-          throw const TraqApiException('セッションCookieを取得できませんでした');
-        }
-      });
-
-  Future<void> logout() => _call(() => _dio.post<void>('/logout'));
+  /// アクセストークンを無効にする。
+  Future<void> revokeToken() => _call(
+    () => _dio.post<void>(
+      '/oauth2/revoke',
+      data: {'token': accessToken},
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    ),
+  );
 
   // ---- ユーザー ----
 

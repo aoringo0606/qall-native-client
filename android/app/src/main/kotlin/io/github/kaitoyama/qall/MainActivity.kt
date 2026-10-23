@@ -1,4 +1,4 @@
-package jp.trap.qall
+package io.github.kaitoyama.qall
 
 import io.flutter.embedding.android.FlutterActivity
 

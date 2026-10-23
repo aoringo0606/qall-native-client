@@ -3,4 +3,4 @@
 -keep class com.cloudwebrtc.webrtc.MethodCallHandlerImpl { *; }
 -keep class org.webrtc.audio.** { *; }
 # JNI
--keep class jp.trap.qall_audio.RnnoiseNative { *; }
+-keep class io.github.kaitoyama.qall_audio.RnnoiseNative { *; }

@@ -1,5 +1,8 @@
 # Qall Native Client
 
+> [!NOTE]
+> [kaitoyama](https://github.com/kaitoyama) が個人で作っている**非公式のプロトタイプ**です。traP 公式のアプリではありません。
+
 [traQ](https://github.com/traPtitech/traQ) の **Qall (通話)** を中心にした iPhone / iPad / Android 向けネイティブクライアントです。Flutter で1つのコードベースから両OSをビルドします。
 
 メッセージ機能は最小限にとどめ、Qall は Web版 (traQ_S-UI) の機能・設定をひととおり取り込んでいます。
@@ -13,7 +16,8 @@
 | リアクション | スタンプでリアクション (最近使ったもの + 検索)、サウンドボード (再生・音の追加) |
 | 弾幕 | 通話中のチャンネルへの投稿とスタンプを画面に流す (ON/OFF) |
 | 音声 | ノイズ除去 (標準 / RNNoise / なし)、エコーキャンセル、自動音量調整、iOS のマイクモード (声を分離)、マスターボリューム、参加者ごとの音量、入退室の効果音、メッセージの読み上げ (声・ピッチ・速さ・音量) |
-| メッセージ | 購読中のチャンネル一覧 (未読数つき)、メッセージの閲覧・送信 (WebSocket でリアルタイム更新) |
+| チャンネル | 購読中のチャンネル一覧 (未読数つき)、全チャンネルの検索、アプリ内のお気に入り (チャンネルIDで保存するので、移動・改名しても外れない) |
+| メッセージ | メッセージの閲覧・送信 (WebSocket でリアルタイム更新) |
 | その他 | 通話中のルーム一覧、iPad / タブレットでは2ペイン表示 |
 
 ## スクリーンショット
@@ -40,35 +44,72 @@ flutter run            # 接続中の実機 / シミュレータで起動
 ```
 
 - Flutter 3.47 (stable) で開発しています
-- ログインは traQ の ID とパスワードです。接続先は既定で `https://q.trap.jp`、ログイン画面の「詳細設定」で変更できます
+- ログインは traQ の OAuth2 です (下の「OAuth2 クライアント」を参照)。接続先とクライアントIDはログイン画面の「詳細設定」でも変更できます
 - 通話・画面共有は実機で確認してください (シミュレータ / エミュレータではマイクや画面キャプチャが制限されます)
+
+### OAuth2 クライアント
+
+q.trap.jp 用のクライアント (ID `SVi9KL1akUgMRgEN0G9ItOgzngcrf6QAvM8B`) をアプリに埋め込んであります。別の traQ サーバーで使う場合や、自分のクライアントを使う場合は、traQ の Bot Console で次の内容で登録してください。
+
+| 項目 | 値 |
+| --- | --- |
+| コールバックURL | `io.github.kaitoyama.qall:/oauth2/callback` |
+| スコープ | `read` / `write` / `qall` |
+
+Bot Console で作ったクライアントは公開クライアント (クライアントシークレットを使わない) になります。発行されたクライアントIDは、`--dart-define=TRAQ_CLIENT_ID=...` を付けてビルドするか、ログイン画面の「詳細設定」で指定します。公開クライアントなので、クライアントIDは公開してもかまいません。クライアントシークレットはアプリに入れないでください (アプリから取り出せてしまいます)。
+
+コールバックURLのスキーム `io.github.kaitoyama.qall` は Bundle ID とは別に固定しています。Bundle ID を変えたビルドやフォークでも、同じクライアントをそのまま使えます。スキームを変える場合は、`lib/core/traq_oauth.dart` の `oauthRedirectScheme`、`android/app/src/main/AndroidManifest.xml` の `CallbackActivity`、traQ に登録したコールバックURL の3か所をそろえてください。
 
 ### iOS の初回セットアップ
 
 `ios/Runner.xcworkspace` を Xcode で開き、以下を行ってください。
 
 1. `Runner` と `BroadcastExtension` の両ターゲットで *Signing & Capabilities* の Team を設定する
-2. 両ターゲットに App Group `group.jp.trap.qall` が付いていることを確認する (自動署名なら Xcode が登録します)
+2. 両ターゲットに App Group `group.io.github.kaitoyama.qall` が付いていることを確認する (自動署名なら Xcode が登録します)
 
 Bundle ID を変える場合は、プロジェクト (PROJECT > Runner) のビルド設定で次の3つをそろえて変更してください。Info.plist と entitlements はここから展開されます。
 
 | ビルド設定 | 既定値 |
 | --- | --- |
-| `PRODUCT_BUNDLE_IDENTIFIER` (Runner ターゲット) | `jp.trap.qall` |
-| `BROADCAST_EXTENSION_BUNDLE_IDENTIFIER` | `jp.trap.qall.BroadcastExtension` |
-| `APP_GROUP_IDENTIFIER` | `group.jp.trap.qall` |
+| `PRODUCT_BUNDLE_IDENTIFIER` (Runner ターゲット) | `io.github.kaitoyama.qall` |
+| `BROADCAST_EXTENSION_BUNDLE_IDENTIFIER` | `io.github.kaitoyama.qall.BroadcastExtension` |
+| `APP_GROUP_IDENTIFIER` | `group.io.github.kaitoyama.qall` |
 
 Android の applicationId は `android/app/build.gradle.kts` にあります。
 
+## APK の配布
+
+`v1.2.3` のようなタグを push すると、GitHub Actions (`.github/workflows/release.yml`) が署名済みの APK をビルドし、[Releases](https://github.com/kaitoyama/qall-native-client/releases) に置きます。
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+署名鍵はリポジトリの Secrets に入れておきます。鍵が変わると上書きインストールできなくなるので、鍵ファイルとパスワードはなくさないよう保管してください。
+
+| Secret | 内容 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | keystore (`.jks`) を base64 にしたもの |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore のパスワード |
+| `ANDROID_KEY_ALIAS` | 鍵のエイリアス |
+| `ANDROID_KEY_PASSWORD` | 鍵のパスワード |
+
+手元で同じ鍵を使ってビルドする場合は、`android/key.properties` に `storeFile` / `storePassword` / `keyAlias` / `keyPassword` を書きます (git には入りません)。このファイルがなければデバッグ鍵で署名します。
+
 ## 設計メモ
 
-### 認証: OAuth2 ではなくセッションCookie
+### 認証: OAuth2 (認可コード + PKCE)
 
-traQ の Qall API (`/api/v3/qall/*`) は `WebRTC` 権限を要求しますが、OAuth2 の `read` / `write` スコープにはこの権限が含まれていません (traQ `service/rbac/role/{read,write}.go`)。そのため、Web 版と同じく `POST /api/v3/login` で得たセッションCookie `r_session` を使います。
+traQ の OAuth2 の認可コードフローでログインします (`lib/core/traq_oauth.dart`)。Qall API (`/api/v3/qall/*`) が要求する `WebRTC` 権限は `qall` スコープに含まれます (traQ#3430)。
 
-- Cookie は Keychain / Android Keystore (`flutter_secure_storage`) に保存
-- traQ はセッションを期限前に再発行することがあるので、全レスポンスの `Set-Cookie` を見て更新します (`lib/core/traq_api.dart`)
-- WebSocket (`/api/v3/ws`) にも同じ Cookie を付けて接続します
+- 認可画面は iOS では ASWebAuthenticationSession、Android では Custom Tabs で開きます ([flutter_web_auth_2](https://pub.dev/packages/flutter_web_auth_2))。ブラウザの traQ のログイン状態をそのまま使えるので、外部ログインのアカウントでも入れます
+- リダイレクト先には、リバースドメイン形式のカスタムスキーム `io.github.kaitoyama.qall:/oauth2/callback` を使います ([RFC 8252](https://www.rfc-editor.org/rfc/rfc8252) 7.1)
+  - カスタムスキームは他のアプリも登録できます。そのため、認可コードを横取りされても使えないよう、PKCE (S256) を必ず使います。traQ も http(s) 以外のリダイレクト先では PKCE を必須にしています
+  - Universal Links / App Links (https のリダイレクト先) は、アプリの署名とドメインを結び付ける必要があります。誰でもビルドできるコミュニティのアプリには向かないので、使っていません
+- アクセストークンは Keychain / Android Keystore (`flutter_secure_storage`) に保存し、API・WebSocket・画像の取得に `Authorization: Bearer` で付けます
+- traQ の既定の設定ではリフレッシュトークンが発行されず、アクセストークンは1年間有効です。期限が切れて 401 が返ったら、ログイン画面に戻します
+- ログアウト時は `POST /api/v3/oauth2/revoke` でトークンを無効にします
 
 ### Qall (LiveKit) と Web 版との互換性
 
@@ -159,5 +200,4 @@ QALL_SCREENSHOT_FONT_DIR=/path/to/fonts flutter test tool/screenshots
 - カメラの背景ぼかし・背景画像 (Web版にはある。端末ごとに人物の切り抜き処理をネイティブで実装する必要がある)
 - 画面共有で端末の音も流す (flutter_webrtc がモバイルで未対応)
 - 通話への招待・着信通知 (CallKit / FCM)
-- traQ の外部ログイン (OAuth 連携アカウント) への対応
 - メッセージの Markdown 表示・スタンプ表示

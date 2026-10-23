@@ -23,7 +23,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:label="Qall"
+        android:label="Qall (proto)"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -46,6 +46,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!--
+          traQ の OAuth2 ログインのコールバック (io.github.kaitoyama.qall:/oauth2/callback) を受け取る。
+          スキームは lib/core/traq_oauth.dart の oauthRedirectScheme とそろえること。
+        -->
+        <activity
+            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
+            android:exported="true"
+            android:taskAffinity="">
+            <intent-filter android:label="flutter_web_auth_2">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="io.github.kaitoyama.qall" />
             </intent-filter>
         </activity>
         <!--

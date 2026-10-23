@@ -1,4 +1,4 @@
-package jp.trap.qall_audio
+package io.github.kaitoyama.qall_audio
 
 import android.content.Context
 import android.media.AudioAttributes

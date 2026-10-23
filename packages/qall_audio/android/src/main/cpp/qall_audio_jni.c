@@ -4,18 +4,18 @@
 #include "qall_denoiser.h"
 
 JNIEXPORT jlong JNICALL
-Java_jp_trap_qall_1audio_RnnoiseNative_create(JNIEnv *env, jclass clazz) {
+Java_io_github_kaitoyama_qall_1audio_RnnoiseNative_create(JNIEnv *env, jclass clazz) {
   return (jlong)(intptr_t)qall_denoiser_create();
 }
 
 JNIEXPORT void JNICALL
-Java_jp_trap_qall_1audio_RnnoiseNative_destroy(JNIEnv *env, jclass clazz, jlong handle) {
+Java_io_github_kaitoyama_qall_1audio_RnnoiseNative_destroy(JNIEnv *env, jclass clazz, jlong handle) {
   qall_denoiser_destroy((QallDenoiser *)(intptr_t)handle);
 }
 
 // buffer は WebRTC の録音スレッドが使っている DirectByteBuffer (16bit PCM, インターリーブ)。
 JNIEXPORT jfloat JNICALL
-Java_jp_trap_qall_1audio_RnnoiseNative_processPcm16(JNIEnv *env, jclass clazz, jlong handle,
+Java_io_github_kaitoyama_qall_1audio_RnnoiseNative_processPcm16(JNIEnv *env, jclass clazz, jlong handle,
                                                      jobject buffer, jint bytes,
                                                      jint channels) {
   if (handle == 0 || channels <= 0) return 0.0f;

@@ -135,7 +135,7 @@ List<Message> _messages() {
 // ---- フェイク ----
 
 class _FakeApi extends TraqApi {
-  _FakeApi() : super(origin: defaultTraqOrigin, sessionToken: 'dummy');
+  _FakeApi() : super(origin: defaultTraqOrigin, accessToken: 'dummy');
 
   @override
   Future<Me> getMe() async => _me;
@@ -201,7 +201,8 @@ class _NoSession extends SessionStore {
   Future<StoredSession?> load() async => null;
 
   @override
-  Future<String> lastOrigin() async => defaultTraqOrigin;
+  Future<LoginSettings> loginSettings() async =>
+      const LoginSettings(origin: defaultTraqOrigin, clientId: '');
 }
 
 class _FakeCall extends QallCallController {

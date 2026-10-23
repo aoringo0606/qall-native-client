@@ -8,13 +8,13 @@
 import ReplayKit
 import OSLog
 
-let broadcastLogger = OSLog(subsystem: "jp.trap.qall", category: "Broadcast")
+let broadcastLogger = OSLog(subsystem: "io.github.kaitoyama.qall", category: "Broadcast")
 private enum Constants {
     // アプリ本体と Broadcast Extension で共有する App Group ID。
     // Xcode のビルド設定 APP_GROUP_IDENTIFIER が Info.plist の
     // RTCAppGroupIdentifier に展開されるので、そこから読む。
     static let appGroupIdentifier =
-        Bundle.main.object(forInfoDictionaryKey: "RTCAppGroupIdentifier") as? String ?? "group.jp.trap.qall"
+        Bundle.main.object(forInfoDictionaryKey: "RTCAppGroupIdentifier") as? String ?? "group.io.github.kaitoyama.qall"
 }
 
 class SampleHandler: RPBroadcastSampleHandler {

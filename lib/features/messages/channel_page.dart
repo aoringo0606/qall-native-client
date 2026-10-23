@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../core/traq_api.dart';
+import '../channels/favorite_channels.dart';
 import '../qall/call_actions.dart';
 import '../qall/call_bar.dart';
 import '../qall/call_controller.dart';
@@ -45,7 +46,10 @@ class ChannelPage extends ConsumerWidget {
               ),
           ],
         ),
-        actions: [_CallButton(channelId: channelId)],
+        actions: [
+          FavoriteChannelButton(channelId: channelId),
+          _CallButton(channelId: channelId),
+        ],
       ),
       body: Column(
         children: [

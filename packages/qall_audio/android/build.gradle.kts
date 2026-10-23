@@ -1,4 +1,4 @@
-group = "jp.trap.qall_audio"
+group = "io.github.kaitoyama.qall_audio"
 version = "1.0-SNAPSHOT"
 
 buildscript {
@@ -26,7 +26,7 @@ plugins {
 }
 
 android {
-    namespace = "jp.trap.qall_audio"
+    namespace = "io.github.kaitoyama.qall_audio"
 
     compileSdk = 36
 

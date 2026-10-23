@@ -34,7 +34,7 @@ flutter:
   plugin:
     platforms:
       android:
-        package: jp.trap.qall_audio
+        package: io.github.kaitoyama.qall_audio
         pluginClass: QallAudioPlugin
       ios:
         pluginClass: QallAudioPlugin

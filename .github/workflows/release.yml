@@ -1,0 +1,65 @@
+name: Release
+
+# v1.2.3 のようなタグを push すると、署名済みの APK をビルドして GitHub Releases に置く
+on:
+  push:
+    tags: ['v*']
+
+env:
+  FLUTTER_VERSION: 3.47.7
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Build & release APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter test
+
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 が設定されていません"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/release.jks
+          cat > android/key.properties <<PROPS
+          storeFile=release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          PROPS
+
+      - name: Build APK
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          flutter build apk --release \
+            --build-name="$VERSION" \
+            --build-number="${{ github.run_number }}"
+          cp build/app/outputs/flutter-apk/app-release.apk "qall-$VERSION.apk"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "qall-${GITHUB_REF_NAME#v}.apk" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes

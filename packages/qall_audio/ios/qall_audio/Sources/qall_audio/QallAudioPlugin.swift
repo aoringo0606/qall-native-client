@@ -15,7 +15,7 @@ public class QallAudioPlugin: NSObject, FlutterPlugin {
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
-      name: "jp.trap.qall/audio", binaryMessenger: registrar.messenger())
+      name: "io.github.kaitoyama.qall/audio", binaryMessenger: registrar.messenger())
     let instance = QallAudioPlugin(registrar: registrar)
     registrar.addMethodCallDelegate(instance, channel: channel)
   }

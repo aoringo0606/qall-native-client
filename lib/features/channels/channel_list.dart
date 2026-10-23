@@ -7,9 +7,10 @@ import '../../core/providers.dart';
 import '../../widgets/user_avatar.dart';
 import '../qall/call_actions.dart';
 import '../qall/call_controller.dart';
+import 'favorite_channels.dart';
 
-/// 通話中のルームと、購読しているチャンネルの一覧。
-class ChannelList extends ConsumerWidget {
+/// 通話中のルーム、お気に入り、購読しているチャンネルの一覧と、チャンネル検索。
+class ChannelList extends ConsumerStatefulWidget {
   const ChannelList({
     super.key,
     required this.onSelect,
@@ -19,7 +20,21 @@ class ChannelList extends ConsumerWidget {
   final void Function(String channelId) onSelect;
   final String? selectedChannelId;
 
-  Future<void> _refresh(WidgetRef ref) async {
+  @override
+  ConsumerState<ChannelList> createState() => _ChannelListState();
+}
+
+class _ChannelListState extends ConsumerState<ChannelList> {
+  final _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
     ref.invalidate(subscriptionsProvider);
     ref.invalidate(unreadProvider);
     ref.invalidate(qallRoomsProvider);
@@ -30,12 +45,23 @@ class ChannelList extends ConsumerWidget {
     ]);
   }
 
+  void _clearSearch() {
+    _search.clear();
+    setState(() => _query = '');
+  }
+
+  void _select(String channelId) {
+    if (_query.isNotEmpty) {
+      _clearSearch();
+      FocusScope.of(context).unfocus();
+    }
+    widget.onSelect(channelId);
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final tree = ref.watch(channelTreeProvider);
     final subscriptions = ref.watch(subscriptionsProvider);
-    final unread = ref.watch(unreadProvider).value ?? const {};
-    final rooms = ref.watch(qallRoomsProvider).value ?? const {};
 
     if (tree.hasError || subscriptions.hasError) {
       return _ErrorView(
@@ -52,26 +78,77 @@ class ChannelList extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
 
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: SearchBar(
+            controller: _search,
+            hintText: 'チャンネルを検索',
+            leading: const Icon(Icons.search),
+            trailing: [
+              if (_query.isNotEmpty)
+                IconButton(
+                  tooltip: 'クリア',
+                  icon: const Icon(Icons.close),
+                  onPressed: _clearSearch,
+                ),
+            ],
+            elevation: const WidgetStatePropertyAll(0),
+            constraints: const BoxConstraints(minHeight: 44),
+            onChanged: (v) => setState(() => _query = v.trim()),
+          ),
+        ),
+        Expanded(
+          child: _query.isEmpty
+              ? _buildSections(channelTree, subscribed)
+              : _buildSearchResults(channelTree),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSections(
+    ChannelTree channelTree,
+    Map<String, SubscriptionLevel> subscribed,
+  ) {
+    final unread = ref.watch(unreadProvider).value ?? const {};
+    final rooms = ref.watch(qallRoomsProvider).value ?? const {};
+    final favoriteIds = ref.watch(favoriteChannelsProvider);
+    int byPath(Channel a, Channel b) =>
+        channelTree.path(a.id)!.compareTo(channelTree.path(b.id)!);
+
     final activeRooms =
         rooms.values.where((r) => channelTree[r.roomId] != null).toList()..sort(
           (a, b) => channelTree
               .path(a.roomId)!
               .compareTo(channelTree.path(b.roomId)!),
         );
+    // 見つからないID (削除・別サーバー) は表示しない
+    final favorites =
+        favoriteIds.map((id) => channelTree[id]).whereType<Channel>().toList()
+          ..sort(byPath);
     final channels =
         subscribed.entries
             .where((e) => e.value != SubscriptionLevel.none)
+            .where((e) => !favoriteIds.contains(e.key))
             .map((e) => channelTree[e.key])
             .whereType<Channel>()
             .where((c) => !c.archived)
             .toList()
-          ..sort(
-            (a, b) =>
-                channelTree.path(a.id)!.compareTo(channelTree.path(b.id)!),
-          );
+          ..sort(byPath);
+
+    Widget channelTile(Channel channel) => _ChannelTile(
+      channelId: channel.id,
+      title: channelTree.displayName(channel.id),
+      unread: unread[channel.id],
+      inCall: rooms.containsKey(channel.id),
+      selected: channel.id == widget.selectedChannelId,
+      onTap: () => _select(channel.id),
+    );
 
     return RefreshIndicator(
-      onRefresh: () => _refresh(ref),
+      onRefresh: _refresh,
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
@@ -82,35 +159,58 @@ class ChannelList extends ConsumerWidget {
               itemBuilder: (context, i) => _RoomTile(
                 room: activeRooms[i],
                 tree: channelTree,
-                selected: activeRooms[i].roomId == selectedChannelId,
-                onTap: () => onSelect(activeRooms[i].roomId),
+                selected: activeRooms[i].roomId == widget.selectedChannelId,
+                onTap: () => _select(activeRooms[i].roomId),
               ),
             ),
           ],
+          if (favorites.isNotEmpty) ...[
+            const _SectionHeader(icon: Icons.star, title: 'お気に入り'),
+            SliverList.builder(
+              itemCount: favorites.length,
+              itemBuilder: (context, i) => channelTile(favorites[i]),
+            ),
+          ],
           const _SectionHeader(icon: Icons.tag, title: '購読チャンネル'),
-          if (channels.isEmpty)
+          if (channels.isEmpty && favorites.isEmpty)
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('購読しているチャンネルがありません。traQ のWeb版でチャンネルを購読してください。'),
+                child: Text('購読しているチャンネルがありません。上の検索からチャンネルを探せます。'),
               ),
             ),
           SliverList.builder(
             itemCount: channels.length,
-            itemBuilder: (context, i) {
-              final channel = channels[i];
-              return _ChannelTile(
-                title: channelTree.displayName(channel.id),
-                unread: unread[channel.id],
-                inCall: rooms.containsKey(channel.id),
-                selected: channel.id == selectedChannelId,
-                onTap: () => onSelect(channel.id),
-              );
-            },
+            itemBuilder: (context, i) => channelTile(channels[i]),
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchResults(ChannelTree channelTree) {
+    final unread = ref.watch(unreadProvider).value ?? const {};
+    final rooms = ref.watch(qallRoomsProvider).value ?? const {};
+    final results = channelTree.search(_query);
+    if (results.isEmpty) {
+      return const Center(child: Text('見つかりませんでした'));
+    }
+    return ListView.builder(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      itemCount: results.length,
+      itemBuilder: (context, i) {
+        final channel = results[i];
+        return _ChannelTile(
+          channelId: channel.id,
+          title: channelTree.displayName(channel.id),
+          unread: unread[channel.id],
+          inCall: rooms.containsKey(channel.id),
+          selected: channel.id == widget.selectedChannelId,
+          showFavoriteButton: true,
+          onTap: () => _select(channel.id),
+        );
+      },
     );
   }
 }
@@ -144,25 +244,34 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _ChannelTile extends StatelessWidget {
+class _ChannelTile extends ConsumerWidget {
   const _ChannelTile({
+    required this.channelId,
     required this.title,
     required this.unread,
     required this.inCall,
     required this.selected,
     required this.onTap,
+    this.showFavoriteButton = false,
   });
 
+  final String channelId;
   final String title;
   final UnreadChannel? unread;
   final bool inCall;
   final bool selected;
   final VoidCallback onTap;
 
+  /// 検索結果では星ボタンを出して、その場でお気に入りにできるようにする。
+  final bool showFavoriteButton;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final count = unread?.count ?? 0;
     final theme = Theme.of(context);
+    final favorite = ref.watch(
+      favoriteChannelsProvider.select((ids) => ids.contains(channelId)),
+    );
     return ListTile(
       dense: true,
       selected: selected,
@@ -186,10 +295,42 @@ class _ChannelTile extends StatelessWidget {
                   : theme.colorScheme.outline,
             ),
           ],
+          if (showFavoriteButton) FavoriteChannelButton(channelId: channelId),
         ],
       ),
       onTap: onTap,
+      onLongPress: () => _showMenu(context, ref, favorite),
     );
+  }
+
+  Future<void> _showMenu(
+    BuildContext context,
+    WidgetRef ref,
+    bool favorite,
+  ) async {
+    final toggle = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              enabled: false,
+            ),
+            ListTile(
+              leading: Icon(favorite ? Icons.star_outline : Icons.star),
+              title: Text(favorite ? 'お気に入りから外す' : 'お気に入りに追加'),
+              onTap: () => Navigator.pop(context, true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (toggle == true) {
+      ref.read(favoriteChannelsProvider.notifier).toggle(channelId);
+    }
   }
 }
 

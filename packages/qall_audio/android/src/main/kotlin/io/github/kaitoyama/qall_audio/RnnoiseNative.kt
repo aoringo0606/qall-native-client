@@ -1,4 +1,4 @@
-package jp.trap.qall_audio
+package io.github.kaitoyama.qall_audio
 
 import java.nio.ByteBuffer
 

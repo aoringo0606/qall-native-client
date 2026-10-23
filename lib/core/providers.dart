@@ -6,6 +6,7 @@ import 'channel_tree.dart';
 import 'models.dart';
 import 'session_store.dart';
 import 'traq_api.dart';
+import 'traq_oauth.dart';
 import 'traq_ws.dart';
 
 // ---- 認証 ----
@@ -39,33 +40,36 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     }
   }
 
-  TraqApi _createApi(String origin, String? token) {
-    final store = ref.read(sessionStoreProvider);
-    return TraqApi(
-      origin: origin,
-      sessionToken: token,
-      onSessionTokenChanged: (newToken) =>
-          store.save(StoredSession(origin: origin, token: newToken)),
-      onUnauthorized: _handleUnauthorized,
-    );
-  }
+  TraqApi _createApi(String origin, String token) => TraqApi(
+    origin: origin,
+    accessToken: token,
+    onUnauthorized: _handleUnauthorized,
+  );
 
-  /// 失敗したら [TraqApiException] を投げる (状態は変えない)。
-  Future<void> login({
-    required String origin,
-    required String name,
-    required String password,
-  }) async {
-    final api = _createApi(origin, null);
-    await api.login(name: name, password: password);
+  /// traQ の OAuth2 でログインする。
+  ///
+  /// 失敗したら [TraqApiException]、やめたら [OAuthCanceledException] を投げる
+  /// (状態は変えない)。
+  Future<void> login({required String origin, required String clientId}) async {
+    final token = await TraqOAuth(
+      origin: origin,
+      clientId: clientId,
+    ).authorize();
+    final api = _createApi(origin, token);
     final me = await api.getMe();
+    await ref
+        .read(sessionStoreProvider)
+        .save(
+          StoredSession(origin: origin, token: token),
+          clientId: clientId,
+        );
     state = AsyncData(AuthSession(api: api, me: me));
   }
 
   Future<void> logout() async {
     final session = state.value;
     try {
-      await session?.api.logout();
+      await session?.api.revokeToken();
     } on TraqApiException {
       // オフラインでもローカルのセッションは消す
     }

@@ -9,11 +9,14 @@ class _EmptySessionStore extends SessionStore {
   Future<StoredSession?> load() async => null;
 
   @override
-  Future<String> lastOrigin() async => defaultTraqOrigin;
+  Future<LoginSettings> loginSettings() async =>
+      const LoginSettings(origin: defaultTraqOrigin, clientId: '');
 }
 
 void main() {
-  testWidgets('shows the login form when no session is stored', (tester) async {
+  testWidgets('shows the OAuth login button when no session is stored', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -25,11 +28,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('traQ アカウントでログイン'), findsOneWidget);
-    expect(find.text('ログイン'), findsOneWidget);
+    expect(find.text('traQ でログイン'), findsOneWidget);
 
-    // 空のまま送信するとバリデーションエラー
-    await tester.tap(find.text('ログイン'));
-    await tester.pump();
-    expect(find.text('入力してください'), findsNWidgets(2));
+    // クライアントIDが空のまま押すと、詳細設定が開いてバリデーションエラーが出る
+    await tester.tap(find.text('traQ でログイン'));
+    await tester.pumpAndSettle();
+    expect(find.text('OAuth2 クライアントID'), findsOneWidget);
+    expect(find.text('入力してください'), findsOneWidget);
   });
 }
