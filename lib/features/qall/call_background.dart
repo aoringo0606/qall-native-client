@@ -51,7 +51,10 @@ class CallBackgroundService {
         allowWifiLock: true,
         // アプリのプロセスが落ちたら通話も終わっているので復活させない
         allowAutoRestart: false,
-        stopWithTask: true,
+        // stopWithTask はここで指定しない (AndroidManifest の android:stopWithTask に任せる)。
+        // flutter_foreground_task は stopWithTask: true だと「Activity が1つも
+        // resumed でなくなったら」サービスを止めるため、画面を消したりホームに
+        // 戻っただけで前面サービスと WakeLock が外れ、OS に止められて通話が切れる。
       ),
     );
   }
