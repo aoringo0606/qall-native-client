@@ -86,14 +86,15 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-署名鍵はリポジトリの Secrets に入れておきます。鍵が変わると上書きインストールできなくなるので、鍵ファイルとパスワードはなくさないよう保管してください。
+署名鍵は、GitHub の `release` 環境の Secrets に入れておきます。この環境は `v*` タグからのデプロイだけを許可しているので、他のブランチのワークフローからは鍵を読めません。鍵が変わると上書きインストールできなくなるので、鍵ファイルとパスワードはなくさないよう保管してください。
 
-| Secret | 内容 |
+| Secret (`release` 環境) | 内容 |
 | --- | --- |
 | `ANDROID_KEYSTORE_BASE64` | keystore (`.jks`) を base64 にしたもの |
 | `ANDROID_KEYSTORE_PASSWORD` | keystore のパスワード |
-| `ANDROID_KEY_ALIAS` | 鍵のエイリアス |
 | `ANDROID_KEY_PASSWORD` | 鍵のパスワード |
+
+鍵のエイリアスは `qall` に固定しています (`release.yml`)。
 
 手元で同じ鍵を使ってビルドする場合は、`android/key.properties` に `storeFile` / `storePassword` / `keyAlias` / `keyPassword` を書きます (git には入りません)。このファイルがなければデバッグ鍵で署名します。
 
