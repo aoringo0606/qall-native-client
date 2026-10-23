@@ -425,7 +425,7 @@ class QallCallController extends ChangeNotifier {
     BroadcastManager().shouldPublishTrack = allow;
     if (allow) {
       _broadcastRequestTimeout = Timer(
-        const Duration(minutes: 1),
+        const Duration(minutes: 3),
         () => _allowBroadcastPublish(false),
       );
     }

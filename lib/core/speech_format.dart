@@ -44,7 +44,12 @@ String formatForSpeech({
 
 String _describeUrl(String url, String origin) {
   final uri = Uri.tryParse(url);
-  if (uri == null || uri.host.isEmpty) return '不明なドメインのURL';
+  // Uri.origin は http(s) 以外で例外になるので先に弾く
+  if (uri == null ||
+      uri.host.isEmpty ||
+      !uri.isScheme('https') && !uri.isScheme('http')) {
+    return '不明なドメインのURL';
+  }
   // `https://q.trap.jp.evil.com` のような前方一致を traQ の URL と見なさない
   if (uri.origin == Uri.parse(origin).origin) {
     if (uri.path.startsWith('/messages/')) return ' 添付メッセージ ';
