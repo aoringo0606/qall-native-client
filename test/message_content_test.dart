@@ -78,4 +78,13 @@ void main() {
       expect(c.segments.single.kind, SegmentKind.link);
     });
   });
+
+  test('strips bidi control characters that can disguise links', () {
+    final parsed = parseMessageContent(
+      '\u202Ehttps://evil.com/moc.elgoog//:sptth',
+      origin: 'https://q.trap.jp',
+    );
+    expect(parsed.plainText, 'https://evil.com/moc.elgoog//:sptth');
+    expect(parsed.segments.single.url, 'https://evil.com/moc.elgoog//:sptth');
+  });
 }

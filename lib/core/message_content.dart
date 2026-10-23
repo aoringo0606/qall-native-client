@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'models.dart';
+
 enum SegmentKind { text, link, embed }
 
 class ContentSegment {
@@ -38,9 +40,12 @@ class MessageContent {
 }
 
 final _urlPattern = RegExp(r'https?://[^\s<>"]+');
-final _uuidPattern = RegExp(
-  r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-);
+
+/// 表示順を入れ替える制御文字 (RLO など)。リンクの見た目と実際の行き先を
+/// ずらす (`https://evil.com/moc.elgoog//:sptth` を逆向きに見せる) のに使えるので取り除く。
+final _bidiControls = RegExp('[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]');
+
+String stripBidiControls(String text) => text.replaceAll(_bidiControls, '');
 
 /// traQ のメッセージ本文を最小限パースする。
 ///
@@ -50,6 +55,7 @@ final _uuidPattern = RegExp(
 ///
 /// Markdown やスタンプの描画はしない (このアプリはメッセージ機能を最小限にしている)。
 MessageContent parseMessageContent(String content, {required String origin}) {
+  content = stripBidiControls(content);
   final segments = <ContentSegment>[];
   final fileIds = <String>[];
 
@@ -116,7 +122,7 @@ String? _fileIdFromUrl(String url, String origin) {
   final prefix = '$origin/files/';
   if (!url.startsWith(prefix)) return null;
   final id = url.substring(prefix.length).split(RegExp(r'[/?#]')).first;
-  return _uuidPattern.hasMatch(id) ? id : null;
+  return isUuid(id) ? id : null;
 }
 
 /// [start] にある `{` に対応する `}` の次の位置を返す。文字列リテラル内の括弧は無視する。

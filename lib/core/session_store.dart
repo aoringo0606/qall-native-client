@@ -10,12 +10,16 @@ const defaultTraqClientId = String.fromEnvironment(
 );
 
 /// `q.trap.jp/` や `https://q.trap.jp/channels/gps` を `https://q.trap.jp` にそろえる。
+///
+/// アクセストークンを平文で流さないよう、`http://` を指定されても https にする。
 String normalizeOrigin(String input) {
-  var origin = input.trim();
-  if (!origin.startsWith(RegExp('https?://'))) origin = 'https://$origin';
-  final uri = Uri.parse(origin);
+  var origin = input.trim().replaceFirst(
+    RegExp('^https?://', caseSensitive: false),
+    '',
+  );
+  final uri = Uri.parse('https://$origin');
   return Uri(
-    scheme: uri.scheme,
+    scheme: 'https',
     host: uri.host,
     port: uri.hasPort ? uri.port : null,
   ).toString();
@@ -41,7 +45,14 @@ class LoginSettings {
 /// アクセストークンを Keychain / Android Keystore に保存する。
 class SessionStore {
   SessionStore([FlutterSecureStorage? storage])
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            // iCloud やバックアップ経由で他の端末に移さない
+            iOptions: IOSOptions(
+              accessibility: KeychainAccessibility.unlocked_this_device,
+            ),
+          );
 
   final FlutterSecureStorage _storage;
 

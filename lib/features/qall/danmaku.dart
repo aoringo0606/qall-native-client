@@ -76,7 +76,14 @@ class _DanmakuOverlayState extends ConsumerState<DanmakuOverlay> {
     });
   }
 
+  /// 同時に流すスタンプの上限。他の参加者が大量に送ってきても重くならないようにする。
+  static const _maxStamps = 30;
+
   void _addStamp(StampReaction reaction) {
+    if (_stamps.length >= _maxStamps) return;
+    // 存在しないスタンプIDは画像を取りに行かない
+    final known = ref.read(stampsProvider).value;
+    if (known != null && !known.containsKey(reaction.stampId)) return;
     final stamp = _Stamp(
       UniqueKey(),
       reaction.stampId,

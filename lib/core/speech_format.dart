@@ -38,13 +38,15 @@ String formatForSpeech({
   if (text.length > maxSpeechLength) {
     text = '${text.substring(0, maxSpeechLength)} 。以下略';
   }
-  return '$userDisplayNameさん: $text';
+  // Android の読み上げエンジンが SSML (`<speak>` など) として解釈しないよう山括弧を除く
+  return '$userDisplayNameさん: $text'.replaceAll(RegExp('[<>]'), ' ').trim();
 }
 
 String _describeUrl(String url, String origin) {
   final uri = Uri.tryParse(url);
   if (uri == null || uri.host.isEmpty) return '不明なドメインのURL';
-  if (url.startsWith(origin)) {
+  // `https://q.trap.jp.evil.com` のような前方一致を traQ の URL と見なさない
+  if (uri.origin == Uri.parse(origin).origin) {
     if (uri.path.startsWith('/messages/')) return ' 添付メッセージ ';
     if (uri.path.startsWith('/files/')) return ' 添付ファイル ';
   }

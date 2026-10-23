@@ -103,6 +103,7 @@ void main() {
       normalizeOrigin(' https://q.trap.jp/channels/gps '),
       'https://q.trap.jp',
     );
-    expect(normalizeOrigin('http://localhost:3000/'), 'http://localhost:3000');
+    // トークンを平文で流さないよう http は https にする
+    expect(normalizeOrigin('http://localhost:3000/'), 'https://localhost:3000');
   });
 }

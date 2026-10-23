@@ -30,6 +30,17 @@ void main() {
     );
   });
 
+  test('does not treat look-alike domains as traQ links', () {
+    expect(
+      speak('https://q.trap.jp.evil.com/messages/x'),
+      'はなさん: q.trap.jp.evil.comドメインのURL',
+    );
+  });
+
+  test('removes angle brackets so engines do not parse SSML', () {
+    expect(speak('<speak>hi</speak>'), 'はなさん:  speak hi /speak');
+  });
+
   test('reads stamps, spoilers and code blocks', () {
     expect(speak(':thinking_face:'), 'はなさん: thinking_faceスタンプ');
     expect(speak(':party.large.rotate:'), 'はなさん: partyスタンプ');

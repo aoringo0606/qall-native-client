@@ -5,6 +5,15 @@ DateTime _parseTime(Object? value) =>
     DateTime.tryParse(value as String? ?? '')?.toLocal() ??
     DateTime.fromMillisecondsSinceEpoch(0);
 
+final _uuidPattern = RegExp(
+  r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+);
+
+/// traQ のID (UUID) の形をしているか。
+///
+/// 他のユーザーやサーバーから来たIDを URL のパスに入れる前に確かめる。
+bool isUuid(String value) => _uuidPattern.hasMatch(value);
+
 class Me {
   const Me({required this.id, required this.name, required this.displayName});
 
@@ -224,7 +233,7 @@ class SoundboardItem {
 
   factory SoundboardItem.fromJson(Map<String, dynamic> json) {
     String? uuid(Object? v) =>
-        v is String && v.isNotEmpty && v != _nilUuid ? v : null;
+        v is String && isUuid(v) && v != _nilUuid ? v : null;
     return SoundboardItem(
       soundId: json['soundId'] as String,
       soundName: json['soundName'] as String? ?? '',

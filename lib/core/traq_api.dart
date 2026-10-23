@@ -57,22 +57,21 @@ class TraqApi {
 
   Uri get webSocketUri {
     final base = Uri.parse(origin);
-    return base.replace(
-      scheme: base.scheme == 'http' ? 'ws' : 'wss',
-      path: '/api/v3/ws',
-    );
+    return base.replace(scheme: 'wss', path: '/api/v3/ws');
   }
 
   String userIconUrl(String userName) =>
       '$origin/api/v3/public/icon/${Uri.encodeComponent(userName)}';
 
+  // ID はサーバーや他のユーザーから来るので、`../` などでパスを変えられないようエンコードする
   String fileThumbnailUrl(String fileId) =>
-      '$origin/api/v3/files/$fileId/thumbnail';
+      '$origin/api/v3/files/${Uri.encodeComponent(fileId)}/thumbnail';
 
-  String fileUrl(String fileId) => '$origin/files/$fileId';
+  String fileUrl(String fileId) =>
+      '$origin/files/${Uri.encodeComponent(fileId)}';
 
   String stampImageUrl(String stampId) =>
-      '$origin/api/v3/stamps/$stampId/image';
+      '$origin/api/v3/stamps/${Uri.encodeComponent(stampId)}/image';
 
   Future<T> _call<T>(Future<T> Function() request) async {
     try {

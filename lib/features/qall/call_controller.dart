@@ -109,6 +109,12 @@ class QallCallController extends ChangeNotifier {
     _background = CallBackgroundService(
       onNotificationAction: _onNotificationAction,
     );
+    if (Platform.isIOS) {
+      // 画面収録の開始/停止は Darwin 通知で届くが、通知名は端末全体で共有されていて
+      // 他のアプリも送れる。ユーザーが共有ボタンを押したときだけ publish する
+      BroadcastManager().shouldPublishTrack = false;
+      BroadcastManager().addListener(_onBroadcastStateChanged);
+    }
   }
 
   final TraqApi api;
@@ -130,6 +136,7 @@ class QallCallController extends ChangeNotifier {
   bool _disposed = false;
   int _attempt = 0;
   final _reactions = StreamController<StampReaction>.broadcast();
+  Timer? _broadcastRequestTimeout;
 
   AudioCaptureOptions get _micOptions {
     final s = settings();
@@ -248,6 +255,10 @@ class QallCallController extends ChangeNotifier {
     try {
       final micGranted = await _requestMicrophonePermission();
       final endpoint = await api.getQallEndpoint();
+      // LiveKit のトークンを平文で送らないよう、暗号化された接続先だけを使う
+      if (!(Uri.tryParse(endpoint)?.isScheme('wss') ?? false)) {
+        throw const CallException('通話サーバーの接続先が安全ではありません (wss ではありません)');
+      }
       final token = await api.getQallToken(channelId, isWebinar: webinar);
       if (cancelled()) return;
 
@@ -287,7 +298,10 @@ class QallCallController extends ChangeNotifier {
       debugPrint('Qall join failed: $e');
       await _teardown();
       throw CallException(
-        '通話に参加できませんでした: ${e is TraqApiException ? e.message : e}',
+        '通話に参加できませんでした: ${switch (e) {
+          TraqApiException(:final message) || CallException(:final message) => message,
+          _ => e,
+        }}',
       );
     } finally {
       _notify();
@@ -384,6 +398,7 @@ class QallCallController extends ChangeNotifier {
       return;
     }
 
+    if (Platform.isIOS) _allowBroadcastPublish(true);
     if (Platform.isAndroid) {
       final granted = await Helper.requestCapturePermission();
       if (!granted) return;
@@ -401,6 +416,31 @@ class QallCallController extends ChangeNotifier {
   }
 
   Future<void> toggleScreenShare() => setScreenShareEnabled(!isScreenSharing);
+
+  /// iOS: 画面収録が始まったら publish してよいか。ユーザーが共有ボタンを押してから
+  /// ピッカーで開始するまでの間だけ許可する (開始しなかった場合は時間切れで戻す)。
+  void _allowBroadcastPublish(bool allow) {
+    _broadcastRequestTimeout?.cancel();
+    _broadcastRequestTimeout = null;
+    BroadcastManager().shouldPublishTrack = allow;
+    if (allow) {
+      _broadcastRequestTimeout = Timer(
+        const Duration(minutes: 1),
+        () => _allowBroadcastPublish(false),
+      );
+    }
+  }
+
+  void _onBroadcastStateChanged() {
+    if (BroadcastManager().isBroadcasting) {
+      // 開始の通知は届いたので、時間切れのタイマーだけ止める (停止までは publish を保つ)
+      _broadcastRequestTimeout?.cancel();
+      _broadcastRequestTimeout = null;
+    } else {
+      _allowBroadcastPublish(false);
+    }
+    _notify();
+  }
 
   /// カメラ映像の送信を開始/停止する。
   Future<void> setCameraEnabled(bool enabled) async {
@@ -653,10 +693,12 @@ class QallCallController extends ChangeNotifier {
   void _handleData(DataReceivedEvent event) {
     try {
       final json = jsonDecode(utf8.decode(event.data));
-      if (json is Map && json['type'] == 'stamp' && json['message'] is String) {
+      // 同じ通話の参加者なら誰でも送れるデータなので、スタンプIDの形を確かめる
+      if (json case {'type': 'stamp', 'message': final String stampId}
+          when isUuid(stampId)) {
         _reactions.add(
           StampReaction(
-            stampId: json['message'] as String,
+            stampId: stampId,
             userId: userIdFromIdentity(event.participant?.identity ?? ''),
           ),
         );
@@ -692,6 +734,10 @@ class QallCallController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    if (Platform.isIOS) {
+      BroadcastManager().removeListener(_onBroadcastStateChanged);
+      _allowBroadcastPublish(false);
+    }
     unawaited(_teardown());
     _reactions.close();
     _channelMessages.close();

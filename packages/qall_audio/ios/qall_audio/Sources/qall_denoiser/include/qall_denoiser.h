@@ -21,6 +21,9 @@ void qall_denoiser_destroy(QallDenoiser *denoiser);
 float qall_denoiser_process_float(QallDenoiser *denoiser, float *const *channels,
                                   int num_channels, int frames);
 
+// 受け付けるチャンネル数の上限 (これを超える入力は処理しない)。
+#define QALL_DENOISER_MAX_CHANNELS 8
+
 // 1ブロック (10ms 分) のインターリーブ int16 音声をその場でノイズ除去する。
 float qall_denoiser_process_s16(QallDenoiser *denoiser, int16_t *samples,
                                 int num_channels, int frames);

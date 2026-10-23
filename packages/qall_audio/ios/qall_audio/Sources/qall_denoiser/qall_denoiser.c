@@ -89,8 +89,8 @@ float qall_denoiser_process_float(QallDenoiser *d, float *const *channels,
 
 float qall_denoiser_process_s16(QallDenoiser *d, int16_t *samples, int num_channels,
                                 int frames) {
-  if (d == NULL || samples == NULL || num_channels <= 0 || frames <= 1 ||
-      frames > MAX_BLOCK) {
+  if (d == NULL || samples == NULL || num_channels <= 0 ||
+      num_channels > QALL_DENOISER_MAX_CHANNELS || frames <= 1 || frames > MAX_BLOCK) {
     return 0.0f;
   }
   for (int i = 0; i < frames; i++) {

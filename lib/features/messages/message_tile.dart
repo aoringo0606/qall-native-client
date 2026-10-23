@@ -91,7 +91,10 @@ class MessageTile extends ConsumerWidget {
 }
 
 Future<void> _openUrl(String url) async {
-  await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  final uri = Uri.tryParse(url);
+  // メッセージ由来の URL なので、ブラウザで開く http(s) 以外は開かない
+  if (uri == null || !(uri.isScheme('https') || uri.isScheme('http'))) return;
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 class _MessageBody extends StatefulWidget {

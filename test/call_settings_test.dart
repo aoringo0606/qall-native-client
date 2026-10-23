@@ -46,9 +46,19 @@ void main() {
       'soundId': 's1',
       'soundName': 'ドラムロール',
       'stampId': '00000000-0000-0000-0000-000000000000',
-      'creatorId': 'u1',
+      'creatorId': '0190a6c4-7d43-7b8e-9f21-3c5d8e1a2b4f',
     });
     expect(item.stampId, isNull);
-    expect(item.creatorId, 'u1');
+    expect(item.creatorId, '0190a6c4-7d43-7b8e-9f21-3c5d8e1a2b4f');
+  });
+
+  test('SoundboardItem drops IDs that are not UUIDs', () {
+    // スタンプIDは画像の URL のパスに入るので、`../` などを含むものは捨てる
+    final item = SoundboardItem.fromJson({
+      'soundId': 's1',
+      'soundName': 'x',
+      'stampId': '../../users/me?',
+    });
+    expect(item.stampId, isNull);
   });
 }

@@ -56,6 +56,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             origin: normalizeOrigin(_origin.text),
             clientId: _clientId.text.trim(),
           );
+    } on FormatException {
+      if (mounted) setState(() => _error = 'traQ サーバーの URL が正しくありません');
     } on OAuthCanceledException {
       // ブラウザを閉じただけなので何も出さない
     } on TraqApiException catch (e) {

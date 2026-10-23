@@ -18,9 +18,14 @@ JNIEXPORT jfloat JNICALL
 Java_io_github_kaitoyama_qall_1audio_RnnoiseNative_processPcm16(JNIEnv *env, jclass clazz, jlong handle,
                                                      jobject buffer, jint bytes,
                                                      jint channels) {
-  if (handle == 0 || channels <= 0) return 0.0f;
+  if (handle == 0 || channels <= 0 || channels > QALL_DENOISER_MAX_CHANNELS || bytes <= 0) {
+    return 0.0f;
+  }
   int16_t *samples = (int16_t *)(*env)->GetDirectBufferAddress(env, buffer);
   if (samples == NULL) return 0.0f;
+  // 渡された長さがバッファを超えていたら書き込まない
+  const jlong capacity = (*env)->GetDirectBufferCapacity(env, buffer);
+  if (capacity < 0 || (jlong)bytes > capacity) return 0.0f;
   const int frames = bytes / (2 * channels);
   return qall_denoiser_process_s16((QallDenoiser *)(intptr_t)handle, samples, channels, frames);
 }

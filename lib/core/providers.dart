@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'channel_tree.dart';
@@ -74,12 +75,23 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       // オフラインでもローカルのセッションは消す
     }
     await ref.read(sessionStoreProvider).clearToken();
+    await _clearImageCache();
     state = const AsyncData(null);
+  }
+
+  /// 添付ファイルのサムネイルなど、認証付きで取得した画像を端末から消す。
+  Future<void> _clearImageCache() async {
+    try {
+      await DefaultCacheManager().emptyCache();
+    } catch (_) {
+      // 消せなくてもログアウトは続ける
+    }
   }
 
   void _handleUnauthorized() {
     if (state.value == null) return;
     ref.read(sessionStoreProvider).clearToken();
+    _clearImageCache();
     state = const AsyncData(null);
   }
 }

@@ -32,3 +32,10 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# 署名に使う証明書・プロファイル・鍵はコミットしない
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+ExportOptions.plist
