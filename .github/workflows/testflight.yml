@@ -20,9 +20,9 @@ jobs:
     environment: testflight
     env:
       TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      BUNDLE_ID: io.github.kaitoyama.qall
-      EXTENSION_BUNDLE_ID: io.github.kaitoyama.qall.BroadcastExtension
-      APP_GROUP_ID: group.io.github.kaitoyama.qall
+      BUNDLE_ID: io.github.aoringo0606.qall
+      EXTENSION_BUNDLE_ID: io.github.aoringo0606.qall.BroadcastExtension
+      APP_GROUP_ID: group.io.github.aoringo0606.qall
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
