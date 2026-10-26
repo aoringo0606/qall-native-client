@@ -98,6 +98,35 @@ git push origin v1.0.0
 
 手元で同じ鍵を使ってビルドする場合は、`android/key.properties` に `storeFile` / `storePassword` / `keyAlias` / `keyPassword` を書きます (git には入りません)。このファイルがなければデバッグ鍵で署名します。
 
+## iOS / TestFlight の配布
+
+GitHub Actions の **Upload Qall to TestFlight** (`.github/workflows/testflight.yml`) を手動実行すると、Flutter で本体と画面共有 Extension を署名して App Store Connect にアップロードします。Apple 側の処理が終わったら TestFlight で利用できます。外部テスターへの配布にはベータ版の審査が必要になる場合があります。
+
+初回に Apple Developer / App Store Connect で次を設定してください。
+
+1. App ID `io.github.kaitoyama.qall` と `io.github.kaitoyama.qall.BroadcastExtension` を登録し、両方で App Group `group.io.github.kaitoyama.qall` を有効にする
+2. 本体の Bundle ID で App Store Connect にアプリを作成する
+3. Apple Distribution 証明書 (秘密鍵付きの `.p12`) と、同じ証明書を使う **App Store Connect 配布用 Provisioning Profile を本体・Extension に1つずつ**用意する
+4. GitHub の Environment `testflight` を作成し、配布元のブランチ (通常 `main`) だけを許可する。既存の `release` 環境はタグ限定なので、手動実行のこのワークフローには使いません
+5. `testflight` 環境に次の Secrets を登録する
+
+| Secret (`testflight` 環境) | 内容 |
+| --- | --- |
+| `APPLE_TEAM_ID` | Apple Developer の Team ID |
+| `APPLE_CERTIFICATE_BASE64` | 秘密鍵付きの配布証明書 (`.p12`) の base64 |
+| `APPLE_CERTIFICATE_PASSWORD` | `.p12` のパスワード |
+| `APPLE_PROVISIONING_PROFILE_BASE64` | 本体の配布用 `.mobileprovision` の base64 |
+| `APPLE_EXTENSION_PROVISIONING_PROFILE_BASE64` | BroadcastExtension の配布用 `.mobileprovision` の base64 |
+| `APPSTORE_API_KEY_ID` | App Store Connect のチーム API キーの Key ID |
+| `APPSTORE_API_ISSUER_ID` | チーム API キーの Issuer ID |
+| `APPSTORE_API_PRIVATE_KEY` | API キーの `.p8` ファイルの内容 (base64 にせず改行を含めて登録) |
+
+API キーにはアップロードできるロール (Developer 以上) を付けます。FirstApp と同じ Team を使う場合、配布証明書と API キーは再利用できますが、Provisioning Profile はこのアプリの2つの App ID 用に作成してください。
+
+バージョン名は `pubspec.yaml` の `version` から取得し、ビルド番号はこのワークフローの実行番号 + 2 (初回は 3) にします。アップロード済みの実行を **Re-run** すると番号が重複するので、新しく **Run workflow** してください。手元から配布する場合も同じバージョンのアップロード済み番号を超える番号にそろえてください。
+
+署名設定は CI のチェックアウト内だけで本体・Extension 別に変更し、ローカルの Xcode 自動署名設定は維持します。Bundle ID / App Group を変える場合は、ワークフローの `BUNDLE_ID` / `EXTENSION_BUNDLE_ID` / `APP_GROUP_ID` と Apple 側の登録・Profiles をそろえてください。
+
 ## 設計メモ
 
 ### 認証: OAuth2 (認可コード + PKCE)
