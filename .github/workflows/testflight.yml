@@ -77,6 +77,41 @@ jobs:
           # Flutter can finish successfully even when Xcode's IPA export fails.
           test -n "$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)"
 
+      - name: Verify IPA identifiers
+        run: |
+          set -euo pipefail
+
+          IPA_PATH="$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)"
+          test -n "$IPA_PATH"
+
+          WORK_DIR="$(mktemp -d)"
+          unzip -q "$IPA_PATH" -d "$WORK_DIR"
+
+          APP_PATH="$(find "$WORK_DIR/Payload" -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$APP_PATH"
+
+          echo "=== App Bundle ID ==="
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP_PATH/Info.plist"
+
+          echo "=== App Version ==="
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP_PATH/Info.plist"
+
+          echo "=== Build Number ==="
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP_PATH/Info.plist"
+
+          echo "=== Extension Bundle IDs ==="
+          find "$APP_PATH/PlugIns" -name Info.plist -print -exec \
+            /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" {} \;
+
+          echo "=== Verify expected Bundle IDs ==="
+          ACTUAL_ID="$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP_PATH/Info.plist")"
+          test "$ACTUAL_ID" = "$BUNDLE_ID"
+
+          EXTENSION_PATH="$(find "$APP_PATH/PlugIns" -maxdepth 1 -name '*.appex' -print -quit)"
+          test -n "$EXTENSION_PATH"
+          ACTUAL_EXTENSION_ID="$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$EXTENSION_PATH/Info.plist")"
+          test "$ACTUAL_EXTENSION_ID" = "$EXTENSION_BUNDLE_ID"
+
       - name: Upload to App Store Connect
         env:
           API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
